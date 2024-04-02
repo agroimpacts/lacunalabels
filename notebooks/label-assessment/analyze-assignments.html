@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.3.450">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Lyndon Estes">
+
+<title>Basic Assignment Metrics</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
+
+
+<script src="analyze-assignments_files/libs/clipboard/clipboard.min.js"></script>
+<script src="analyze-assignments_files/libs/quarto-html/quarto.js"></script>
+<script src="analyze-assignments_files/libs/quarto-html/popper.min.js"></script>
+<script src="analyze-assignments_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="analyze-assignments_files/libs/quarto-html/anchor.min.js"></script>
+<link href="analyze-assignments_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="analyze-assignments_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="analyze-assignments_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="analyze-assignments_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="analyze-assignments_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+
+<script src="analyze-assignments_files/libs/kePrint-0.0.1/kePrint.js"></script>
+<link href="analyze-assignments_files/libs/lightable-0.0.1/lightable.css" rel="stylesheet">
+
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+</head>
+
+<body>
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+  <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview"><span class="header-section-number">1</span> Overview</a></li>
+  <li><a href="#initial-transfer-and-processing" id="toc-initial-transfer-and-processing" class="nav-link" data-scroll-target="#initial-transfer-and-processing"><span class="header-section-number">2</span> Initial transfer and processing</a></li>
+  <li><a href="#basic-stats" id="toc-basic-stats" class="nav-link" data-scroll-target="#basic-stats"><span class="header-section-number">3</span> Basic stats</a>
+  <ul>
+  <li><a href="#label-quality" id="toc-label-quality" class="nav-link" data-scroll-target="#label-quality"><span class="header-section-number">3.1</span> Label quality</a>
+  <ul>
+  <li><a href="#q-scores" id="toc-q-scores" class="nav-link" data-scroll-target="#q-scores"><span class="header-section-number">3.1.1</span> Q scores</a></li>
+  <li><a href="#assignment-status" id="toc-assignment-status" class="nav-link" data-scroll-target="#assignment-status"><span class="header-section-number">3.1.2</span> Assignment status</a></li>
+  <li><a href="#label-reviews" id="toc-label-reviews" class="nav-link" data-scroll-target="#label-reviews"><span class="header-section-number">3.1.3</span> Label reviews</a></li>
+  </ul></li>
+  <li><a href="#number-and-area-of-fields" id="toc-number-and-area-of-fields" class="nav-link" data-scroll-target="#number-and-area-of-fields"><span class="header-section-number">3.2</span> Number and area of fields</a></li>
+  </ul></li>
+  <li><a href="#spatial-distributions" id="toc-spatial-distributions" class="nav-link" data-scroll-target="#spatial-distributions"><span class="header-section-number">4</span> Spatial distributions</a></li>
+  </ul>
+</nav>
+</div>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Basic Assignment Metrics</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Lyndon Estes </p>
+          </div>
+  </div>
+    
+  
+    
+  </div>
+  
+
+</header>
+
+<section id="overview" class="level2" data-number="1">
+<h2 data-number="1" class="anchored" data-anchor-id="overview"><span class="header-section-number">1</span> Overview</h2>
+<p>The following provides an assessment of the completed assignments undertaken by the full team of labellers, who were tasked with digitizing Class 2 and 4 sites, and whose quality was assessed against Class 1 sites. The labelling teams additionally remapped nearly 1000 sites from the Class 1 sample that were not including for quality control in the platform.</p>
+</section>
+<section id="initial-transfer-and-processing" class="level2" data-number="2">
+<h2 data-number="2" class="anchored" data-anchor-id="initial-transfer-and-processing"><span class="header-section-number">2</span> Initial transfer and processing</h2>
+<p>Data were initially extracted from <code>labeller</code> using code provided in the <code>labelreview</code> repository, and were transferred into this repository for processing.</p>
+<p>Data on assignments related to assessed quality scores (from Q type assignments, i.e.&nbsp;where a labeller’s digtizations were assessed Class 1 expert labels), completion time, assignment status, and type of assignment were joined to counts of the number of fields collected for each assignment (site).</p>
+</section>
+<section id="basic-stats" class="level2" data-number="3">
+<h2 data-number="3" class="anchored" data-anchor-id="basic-stats"><span class="header-section-number">3</span> Basic stats</h2>
+<section id="label-quality" class="level3" data-number="3.1">
+<h3 data-number="3.1" class="anchored" data-anchor-id="label-quality"><span class="header-section-number">3.1</span> Label quality</h3>
+<section id="q-scores" class="level4" data-number="3.1.1">
+<h4 data-number="3.1.1" class="anchored" data-anchor-id="q-scores"><span class="header-section-number">3.1.1</span> Q scores</h4>
+<p>Quality was measured using two basic approaches. The first was to assess each labeller using randomly assigned Q sites, which were labelling assignments at locations were the expert team had labelled the fields as part of the Class 1 labelling effort. The platform’s built in scoring algorithm then compared the labeller’s maps against the Class 1 labels, and calculating four metrics that contributed to an overall Score (the Q score):</p>
+<ul>
+<li><p>N = agreement between number of digitized between labeller and expert labeller;</p></li>
+<li><p>Edge = nearness of delineated labeller’s digitized field edges to expert’s field edges;</p></li>
+<li><p>Area = Overall agreement of area of fields digitized by labeller and by expert;</p></li>
+<li><p>Categorical = Agreement of categorical label assignment to fields.</p></li>
+<li><p>Score = The weighted mean of the previous 4 scores, here specified as:</p>
+<p><span class="math display">\[
+Score = 0.225N + 0.1Edge + 0.55Area + 0.125Categorical
+\]</span></p></li>
+</ul>
+<p>Edge and Categorical received relatively low weights because the former is a very difficult measure to get right, given the inherent difficulty of distinguishing precise boundaries within the resolution of Planet imagery, while Categorical accuracy is relatively unimportant because the team only labelled field/no-field, therefore mislabels only occurred in cases of complete false positives or false negatives. A more detailed explanation of these measures are provided in <span class="citation" data-cites="estesHighResolutionAnnual2022">Estes et al. (<a href="#ref-estesHighResolutionAnnual2022" role="doc-biblioref">2022</a>)</span>.</p>
+<p>The mean overall score dimension is shown in @tbl-qcomponents, and for each labeller in <a href="#fig-qcomponents">Figure&nbsp;1</a>.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="tbl-qcomponents" class="anchored">
+<table class="table table-sm table-striped small" data-quarto-postprocess="true">
+<caption>Table&nbsp;1: The average overall score in 4 label quality dimensions: Score = Overall accuracy; N = agreement between number of digitized between labeller and expert labeller; Edge = nearness of delineated labeller’s digitized field edges to expert’s field edges; Area = Overall agreement of area of fields digitized by labeller and by expert; Categorical = Accuracy of assigned labels</caption>
+<thead>
+<tr class="header">
+<th style="text-align: right;" data-quarto-table-cell-role="th">Score</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">N</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Edge</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Area</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Categorical</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">0.609</td>
+<td style="text-align: right;">0.33</td>
+<td style="text-align: right;">0.049</td>
+<td style="text-align: right;">0.753</td>
+<td style="text-align: right;">0.925</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-qcomponents" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="analyze-assignments_files/figure-html/fig-qcomponents-1.png" class="img-fluid figure-img" width="768"></p>
+<figcaption class="figure-caption">Figure&nbsp;1: The average score per labeller in each of 4 label quality dimensions: N = agreement between number of digitized between labeller and expert labeller; Edge = nearness of delineated labeller’s digitized field edges to expert’s field edges; Area = Overall agreement of area of fields digitized by labeller and by expert; Categorical = Agreement of categorical label assignment to fields.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The weekly average scores for each metric <a href="#fig-qovertime">Figure&nbsp;2</a> can also provide useful insight into increases or decreases in label quality, owing to increasing experience, pressure to meet labeling deadlines, and other factors. The weekly component scores for each labeller are shown in <a href="#fig-qovertime_lbler">Figure&nbsp;3</a>.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-qovertime" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="analyze-assignments_files/figure-html/fig-qovertime-1.png" class="img-fluid figure-img" width="672"></p>
+<figcaption class="figure-caption">Figure&nbsp;2: Weekly averages in each of the quality components (excluding categorical)</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-qovertime_lbler" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="analyze-assignments_files/figure-html/fig-qovertime_lbler-1.png" class="img-fluid figure-img" width="768"></p>
+<figcaption class="figure-caption">Figure&nbsp;3: Weekly scores for each worker in each of the quality components (excluding categorical, and filtering out weeks where only or fewer Q sites were completed)</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="assignment-status" class="level4" data-number="3.1.2">
+<h4 data-number="3.1.2" class="anchored" data-anchor-id="assignment-status"><span class="header-section-number">3.1.2</span> Assignment status</h4>
+<p>The labeling platform assigns a status to each label that includes the folllowing:</p>
+<ul>
+<li><p>Abandoned: Assignments begun by a labeller but not completed within 24 hours. These are returned to the system for remapping.</p></li>
+<li><p>Returned: Assignments that were returned to the system unmapped by the labeller, perhaps because of missing imagery, poor image quality, etc.</p></li>
+<li><p>Rejected: Q sites where the labeller’s work was scored against the underlying Class 1 labels as being below the 0.4 threshold.</p></li>
+<li><p>Untrusted: F or N assignments completed at a time when the labeller’s average score against the last 5 Q sites completed is below a pre-determined trust threshold.</p></li>
+<li><p>Approved: F or N sites completed by a labeller whose last 5 scores had an average score above the trust threshold.</p></li>
+</ul>
+<p>The overall distribution of assignment status is shown in <a href="#tbl-status">Table&nbsp;2</a>, and the weekly means of non-approved in <a href="#fig-weeklystatus">Figure&nbsp;4</a>.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="tbl-status" class="anchored">
+<table class="table table-hover table-sm table-striped small" data-quarto-postprocess="true" data-tbl-colwidths="[25,25]">
+<caption>Table&nbsp;2: Number of assignments in each status class.</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">Status</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">N</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Abandoned</td>
+<td style="text-align: right;">425</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Approved</td>
+<td style="text-align: right;">38801</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Rejected</td>
+<td style="text-align: right;">283</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Returned</td>
+<td style="text-align: right;">124</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Untrusted</td>
+<td style="text-align: right;">1547</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-weeklystatus" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="analyze-assignments_files/figure-html/fig-weeklystatus-1.png" class="img-fluid figure-img" width="672"></p>
+<figcaption class="figure-caption">Figure&nbsp;4: Assignment status summed by week, shown here logarthmically (base 10) scaled.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Returned and Abandoned assignments were hereafter excluded because they provide no valid label data. The results from an additional 445 assignments were dropped, as these corresponded to 253 sites where labellers reported missing or cloudy imagery.</p>
+</section>
+<section id="label-reviews" class="level4" data-number="3.1.3">
+<h4 data-number="3.1.3" class="anchored" data-anchor-id="label-reviews"><span class="header-section-number">3.1.3</span> Label reviews</h4>
+<p>Reviews of randomly selected sites were also conducted by two of the supervisory team, using the following rubric (also described [here](<a href="https://github.com/agroimpacts/labelreview#review-labels" class="uri">https://github.com/agroimpacts/labelreview#review-labels</a>)):</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Expert review rubric
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The following definitions were used to visually review label quality against the Planet imagery:</p>
+<ul>
+<li><p>True positive (TP): A field that is correctly labelled as such;</p></li>
+<li><p>True negative (TN): A non-field area that is correctly left unlabelled;</p></li>
+<li><p>False negative (FN): An actual field that should have been mapped, but wasn’t;</p></li>
+<li><p>False positive (FP): A non-field area that was incorrectly mapped as a field;</p></li>
+<li><p>Over-segmented (OS): A larger field that was incorrectly divided into many small fields (in these cases, the labeller is making up internal boundaries in the larger field that are not visible in the imagery);</p></li>
+<li><p>Under-segmented (US): Two or more smaller fields that were incorrectly grouped into one larger field, even though boundaries are visible that would enable the smaller fields to be correctly digitized.</p></li>
+</ul>
+<p>Using those definitions, for sites where the imagery shows that there are fields in the imagery, assign one of the following categories to each reviewed site:</p>
+<ul>
+<li><p>0: For cases where the labeller maps less than half the site correctly, either by:</p>
+<ol type="a">
+<li>leaving 50% or more of the area covered by actual fields unlabelled (FN);</li>
+<li>incorrectly mapping more than twice the area of fields that are actually there (FP);</li>
+<li>correctly mapping the total area covered by fields, but grouping them into a larger field or fields that sum to less than half the total number of fields in the imagery (US);</li>
+<li>correctly mapping the total areas covered by fields, but falsely dividing them into more than twice the number of individual fields that are actually there (OS);</li>
+</ol></li>
+<li><p>1: The labeller maps 50-70% of the site correctly, either by:</p>
+<ol type="a">
+<li>leaving 30-50% of the area covered by actual fields unlabelled (FN);</li>
+<li>incorrectly labelling an areas that is 50 to 100% larger than the area of actual fields (FP);</li>
+<li>correctly mapping the total area covered by fields, but grouping them such that there are only 50-70% of the total number of fields in the imagery (US);</li>
+<li>correctly mapping the total areas covered by fields, but falsely dividing them into 50 to 100% more fields than are actually there (OS);</li>
+</ol></li>
+<li><p>2: The labeller maps 70-90% of the site correctly, either by:</p>
+<p>a. leaving 10-30% of the area covered by actual fields unlabelled (FN);</p>
+<ol start="2" type="a">
+<li>incorrectly labelling an areas that is 10 to 50% larger than the area of actual fields (FP);</li>
+<li>correctly mapping the total area covered by fields, but grouping them such that there are only 70-90% of the total number of fields in the imagery (US);</li>
+<li>correctly mapping the total areas covered by fields, but falsely dividing them into 10 to 50% more fields than are actually there (OS);</li>
+</ol></li>
+<li><p>3: The labeller maps 90+% of the site correctly, such that:</p>
+<ol type="a">
+<li>&lt;10% of the area covered by actual fields is left unlabelled (FN);</li>
+<li>The labeled field areas is &lt;10% larger than the actual field area (FP);</li>
+<li>the total number of correctly labelled fields is &lt;10% smaller than the total number of actual fields (US);</li>
+<li>the total number of correctly labelled fields is &lt;10% larger than the total number of actual fields (OS);</li>
+</ol></li>
+</ul>
+<p>For sites where then are no fields visible in the imagery, and the labeller correctly classifies them as having no fields, assign a value of 4.</p>
+</div>
+</div>
+<p>An evaluation of these score is provided in a separate notebook on <a href="expert-reviews.html">Expert Reviews</a>, including a quantitative comparison of the two experts’ reviews for a subset of assignments that were reviewed by both, and the overall mean review scores for each labeller. Here the weekly mean review scores <a href="#fig-weeklyreviews">Figure&nbsp;5</a> and weekly mean review scores per labeller <a href="#fig-wkrevlblr">Figure&nbsp;6</a> are presented.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-weeklyreviews" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="analyze-assignments_files/figure-html/fig-weeklyreviews-1.png" class="img-fluid figure-img" width="672"></p>
+<figcaption class="figure-caption">Figure&nbsp;5: Averages weekly expert review scores for F type (Class 4) sites. The average score across categories 0-3 was calculated (category 4 was excluded), as well as the average of review score recoded to 0 (a 0 or 1 review score) or 1 (review score of 2-4).</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-wkrevlblr" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="analyze-assignments_files/figure-html/fig-wkrevlblr-1.png" class="img-fluid figure-img" width="768"></p>
+<figcaption class="figure-caption">Figure&nbsp;6: Averages weekly expert review scores for each labeller for F type (Class 4) sites. The average score across categories 0-3 was calculated (category 4 was excluded), as well as the average of review score recoded to 0 (a 0 or 1 review score) or 1 (review score of 2-4).</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="number-and-area-of-fields" class="level3" data-number="3.2">
+<h3 data-number="3.2" class="anchored" data-anchor-id="number-and-area-of-fields"><span class="header-section-number">3.2</span> Number and area of fields</h3>
+<p>The distributions of the number of fields digitized per site, along with average size of digitized fields, is shown in <a href="#fig-nfldshist">Figure&nbsp;7</a>, indicating strongly right-skewed distributions, with the most common result being 0-5 fields and 0.5-1 ha per site. The average number of fields digitized per site was 19.4, with 3385 having no fields digitized (note: untrusted, returned, and rejected sites were excluded from the counts). Across all digitized polygons (7.79101^{5} total), the average and median field sizes were 0.96 and 0.49 ha.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-nfldshist" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="analyze-assignments_files/figure-html/fig-nfldshist-1.png" class="img-fluid figure-img" width="864"></p>
+<figcaption class="figure-caption">Figure&nbsp;7: The distribution of the numbers of fields digitized per assignment (left), including the average number and the total number of sites that were assessed as having no fields, and the average size of fields (in hectares) per site (note: 2% of sites have mean sizes &gt;15 ha, and are not shown here), along with the mean and median of digitized field sizes.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The weekly average number of fields digitized per site is shown in <a href="#fig-nfldsweek">Figure&nbsp;8</a>, showing a peak in late December/early January, along with the average area, which shows a peak in mid-January. These latter two trends may indicate a tendency to under-segment during the last two months, or over-segment in the first two months.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-nfldsweek" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="analyze-assignments_files/figure-html/fig-nfldsweek-1.png" class="img-fluid figure-img" width="672"></p>
+<figcaption class="figure-caption">Figure&nbsp;8: The average number (top) and area (bottom) of fields digitized per assignment by week.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="spatial-distributions" class="level2" data-number="4">
+<h2 data-number="4" class="anchored" data-anchor-id="spatial-distributions"><span class="header-section-number">4</span> Spatial distributions</h2>
+<p>The spatial distribution of the different sample classes and the number of times each location was mapped is shown in <a href="#fig-plotmap">Figure&nbsp;9</a>.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-plotmap" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="analyze-assignments_files/figure-html/fig-plotmap-1.png" class="img-fluid figure-img" width="768"></p>
+<figcaption class="figure-caption">Figure&nbsp;9: The distribution of sites mapped by assignment type (F = Class 2; N = Class 4; Q = quality control sites) and the number of times each were mapped.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-fldareamap" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="analyze-assignments_files/figure-html/fig-fldareamap-1.png" class="img-fluid figure-img" width="768"></p>
+<figcaption class="figure-caption">Figure&nbsp;10: The distribution of sites mapped by assignment type (F = Class 2; N = Class 4; Q = quality control sites) and the average sizes of fields at each site.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+
+</section>
+
+<div id="quarto-appendix" class="default"><section class="quarto-appendix-contents" role="doc-bibliography"><h2 class="anchored quarto-appendix-heading">References</h2><div id="refs" class="references csl-bib-body hanging-indent" role="list">
+<div id="ref-estesHighResolutionAnnual2022" class="csl-entry" role="listitem">
+Estes, Lyndon D., Su Ye, Lei Song, Boka Luo, J. Ronald Eastman, Zhenhua Meng, Qi Zhang, et al. 2022. <span>“High Resolution, Annual Maps of Field Boundaries for Smallholder-Dominated Croplands at National Scales.”</span> <em>Frontiers in Artificial Intelligence</em> 4: 744863. <a href="https://www.frontiersin.org/article/10.3389/frai.2021.744863">https://www.frontiersin.org/article/10.3389/frai.2021.744863</a>.
+</div>
+</div></section></div></main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    text: function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+</body></html>

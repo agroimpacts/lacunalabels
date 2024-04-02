@@ -1,0 +1,17 @@
+---
+title: "A Region-Wide, Multi-Year Set of Field Boundary Labels"
+bibliography: references.bib
+---
+
+## Overview
+
+The following provides an overview of the results of the Lacuna Fund-supported project to develop a set of cropland boundaries digitized on Planet basemap imagery [@nicfiNorwayInternationalClimate2023] collected over the majority of the African continent, to facilitate improved machine learning-based mapping of croplands.
+
+The overall project was conducted using \[`labeller](https://github.com/agroimpacts/labeller)`, an image labelling platform designed specifically for annotating crop field boundaries [@Estesplatformcrowdsourcingcreation2016], which runs on an Amazon Web Services EC2 instance.
+
+This site presents:
+
+1.  The workflow used to develop and select the sample, acquire and pre-process the Planet imagery, transfer it to Sentinel-Hub for rendering through WMS in the labeling platform. synthesizes the results of the labeling project.
+2.  The analysis and post-processing of the labels.
+
+The tools for assessing labeling progress and quality, and for accessing data stored in `labeller`'s postgresql database are provided in the \[`labelreview](https://github.com/agroimpacts/labelreview)` repository.

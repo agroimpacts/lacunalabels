@@ -1,0 +1,612 @@
+---
+title: "Basic Assignment Metrics"
+author: "Lyndon Estes"
+editor: visual
+format: html
+engine: knitr
+execute:
+  echo: false
+  warning: false
+  message: false
+toc: true
+number-sections: true
+toc-depth: 5
+bibliography: references.bib
+---
+
+```{r}
+#| echo: false
+#| message: false
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(lubridate)
+library(patchwork)
+
+```
+
+## Overview
+
+The following provides an assessment of the completed assignments undertaken by the full team of labellers, who were tasked with digitizing Class 2 and 4 sites, and whose quality was assessed against Class 1 sites. The labelling teams additionally remapped nearly 1000 sites from the Class 1 sample that were not including for quality control in the platform.
+
+## Initial transfer and processing
+
+Data were initially extracted from `labeller` using code provided in the `labelreview` repository, and were transferred into this repository for processing.
+
+```{r}
+#| label: paths
+root_dir <- here::here("data/")
+raw_dir <- file.path(root_dir, "raw")
+inter_dir <- file.path(root_dir, "interim")
+fetch_dir <- "~/Dropbox/projects/labelreview"
+```
+
+```{r}
+#| label: transfers
+#| message: false
+#| eval: false
+
+files <- dir(fetch_dir, full.names = TRUE, pattern = ".csv|parquet")
+
+file.copy(
+  files[!grepl("label_rev", files)], 
+  file.path(raw_dir, basename(files[!grepl("label_rev", files)])), 
+  overwrite = TRUE
+)
+```
+
+Data on assignments related to assessed quality scores (from Q type assignments, i.e. where a labeller's digtizations were assessed Class 1 expert labels), completion time, assignment status, and type of assignment were joined to counts of the number of fields collected for each assignment (site).
+
+```{r}
+#| label: readins
+#| eval: false
+assignments <- readr::read_csv(file.path(raw_dir, "assignments.csv"))
+quality <- readr::read_csv(file.path(raw_dir, "quality.csv")) %>% 
+  select(-1, -contains(c("old", "count", "outgrid", "num", "tss"))) %>% 
+  setNames(c("assignment_id", "Score", "N", "Edge", "Area", "FieldSkill", 
+             "NoFieldSkill", "Categorical"))
+mgrid <- readr::read_csv(file.path(raw_dir, "maingrid.csv"))
+reviews <- readr::read_csv(file.path(inter_dir, "combined-expert-review.csv"))
+```
+
+```{r}
+#| label: Spatial1
+#| eval: false
+
+drop_countries <- c("CPV", "MDG", "MYT", "STP", "SHN", "REU", "SYC", "MUS")
+iso3 <- geodata::country_codes() %>% 
+  filter(continent == "Africa" & 
+           SOVEREIGN != "France" & !ISO3 %in% drop_countries) %>% 
+  pull(ISO3)
+world <- geodata::world(file.path(root_dir, "external"), level = 0, 
+                        resolution = 3)
+africa <- st_as_sf(world) %>% filter(GID_0 %in% iso3)
+st_write(africa, dsn = "data/external/africa.geojson")
+
+```
+
+```{r}
+#| label: Spatial2
+#| eval: false
+flds <- sfarrow::st_read_parquet(
+  file.path(raw_dir, "mapped_fields.parquet")
+) %>% select(-geom) %>%
+  st_set_crs(4326)
+qflds <- sfarrow::st_read_parquet(file.path(raw_dir, "qc_fields.parquet")) %>%
+  st_set_crs(4326)
+
+# Combine with fields and assignments
+# calculate area first
+flds <- flds %>% 
+  st_transform(crs = "ESRI:102022") %>% 
+  mutate(area = as.numeric(st_area(.) / 10000)) %>% 
+  st_transform(crs = 4326)
+fldsizes <- c("mean" = mean(flds$area), "median" = median(flds$area), 
+              "n" = nrow(flds))
+save(fldsizes, file = here::here("data/interim/fieldsizes.rda"))
+
+# reduce by assignment
+flds_ctarea <- flds %>% 
+  st_drop_geometry() %>% 
+  group_by(assignment_id) %>% 
+  summarize(nflds = n(), farea = mean(area)) %>%
+  ungroup()
+save(flds_ctarea, file = here::here("data/interim/field_ctsareas.rda"))
+```
+
+```{r}
+#| label: assignments
+#| eval: false
+
+# Reviews
+# i <- "ML2972309" #"BF0866703"
+# reviews %>% filter(name == i)
+# start by dropping same Q sites mapped multiple times by same labeller, 
+# because review notebooks were worker_id and name based, not based on assignment_ids, 
+# so we can't tell which assignment the expert reviewed reliably
+# Then count how many sites reviewed by same expert more than once. 
+review_reduced1 <- reviews %>% 
+  select(-geometry) %>%
+  filter(labeller != "expert") %>% 
+  rename(worker_id = labeller, rscore = score, rscore2 = score2) %>% 
+  group_by(name, kml_type, worker_id) %>%
+  mutate(ct = n()) %>% 
+  ungroup() %>% 
+  filter(!(kml_type == "Q" & ct > 1)) %>%  # drop same Q sites mapped multiple times
+  group_by(name, kml_type, worker_id, expert) %>% 
+  mutate(ct = n()) %>% ungroup()  # count for multiple workers
+
+# join above with assignments to pick up assignment_ids, after dropping Abandoned sites,
+# look for duplicated assignments (indicating repeated reviews of same assignment by same
+# expert), average expert scores across these
+review_reduced2 <- assignments %>% 
+  select(name, worker_id, kml_type, assignment_id, status) %>% 
+  filter(status != "Abandoned") %>%
+  mutate(worker_id = as.character(worker_id)) %>% 
+  left_join(review_reduced1, ., relationship = "many-to-many") %>% 
+  group_by(name, assignment_id) %>% 
+  mutate(ct2 = n()) %>% 
+  ungroup() %>% #select(-rscore) %>% 
+  # filter(ct > 1 & ct2 > 1) %>% arrange(name) %>% View()
+  group_by(name, assignment_id, kml_type, worker_id, expert) %>% 
+  summarize(across(c(rscore, rscore2), mean)) %>% 
+  ungroup() %>% 
+  group_by(assignment_id) %>% 
+  summarize(across(rscore:rscore2, mean)) %>% # mean within experts
+  ungroup()
+
+# Combine with assignments
+# assignments %>% filter(is.na(area)) %>% 
+#   select(status, area) %>% distinct() # note, some F sites > 1 because of untrusted
+# i <- "BF0866703" #"BF0291471"
+# assignments %>% filter(name == i)
+load(here::here("data/interim/field_ctsareas.rda"))
+assignments <- assignments %>% 
+  select(-email, -score) %>% 
+  mutate(worker_id = as.character(worker_id)) %>% 
+  left_join(., review_reduced2) %>% 
+  left_join(., flds_ctarea) %>% 
+  left_join(., quality, by = "assignment_id") %>% 
+  mutate(nflds = ifelse(is.na(nflds) & status == "Approved", 0, nflds)) %>% 
+  mutate(area = ifelse(is.na(farea) & status == "Approved", 0, farea)) %>% 
+  left_join(., mgrid %>% select(name, x, y)) %>% 
+  rename(Labeller = worker_id, Type = kml_type)
+
+# filter out bad image quality sites and Abandoned/Returned/Rejected sites
+comment_filter <- c("unmap", "cloud", "not clear", "not too clear", 
+                    "not so clear", "unclear", "dark", "distort", "no image", 
+                    "invisible", "faulty", "not visible", "too bad", "poor", 
+                    "black", "foggy", "issue", "no satellite", "labeller layer", 
+                    "stain", "no labelling layer")
+comment_filter <- paste0(comment_filter, collapse = "|")
+bad_sites <- assignments %>% 
+  filter(grepl(comment_filter, comment)) %>%
+  pull(name) %>% unique(.)
+save(bad_sites, file = here::here("data/interim/bad_sites.rda"))
+# assignments %>%
+#   filter(!name %in% bad_sites) 
+readr::write_csv(assignments, 
+                 file = file.path(inter_dir, "assignments_full.csv"))
+```
+
+```{r}
+#| eval: true
+assignments <- readr::read_csv(file.path(inter_dir, "assignments_full.csv"))
+load(here::here("data/interim/bad_sites.rda"))
+```
+
+## Basic stats
+
+### Label quality
+
+#### Q scores
+
+Quality was measured using two basic approaches. The first was to assess each labeller using randomly assigned Q sites, which were labelling assignments at locations were the expert team had labelled the fields as part of the Class 1 labelling effort. The platform's built in scoring algorithm then compared the labeller's maps against the Class 1 labels, and calculating four metrics that contributed to an overall Score (the Q score):
+
+-   N = agreement between number of digitized between labeller and expert labeller;
+
+-   Edge = nearness of delineated labeller's digitized field edges to expert's field edges;
+
+-   Area = Overall agreement of area of fields digitized by labeller and by expert;
+
+-   Categorical = Agreement of categorical label assignment to fields.
+
+-   Score = The weighted mean of the previous 4 scores, here specified as:
+
+    $$
+    Score = 0.225N + 0.1Edge + 0.55Area + 0.125Categorical
+    $$
+
+Edge and Categorical received relatively low weights because the former is a very difficult measure to get right, given the inherent difficulty of distinguishing precise boundaries within the resolution of Planet imagery, while Categorical accuracy is relatively unimportant because the team only labelled field/no-field, therefore mislabels only occurred in cases of complete false positives or false negatives. A more detailed explanation of these measures are provided in @estesHighResolutionAnnual2022.
+
+The mean overall score dimension is shown in \@tbl-qcomponents, and for each labeller in @fig-qcomponents.
+
+```{r}
+#| label: tbl-qcomponents
+#| eval: true
+#| tbl-cap: "The average overall score in 4 label quality dimensions: Score = Overall accuracy; N = agreement between number of digitized between labeller and expert labeller; Edge = nearness of delineated labeller's digitized field edges to expert's field edges; Area = Overall agreement of area of fields digitized by labeller and by expert; Categorical = Accuracy of assigned labels"
+assignments %>% 
+  filter(!is.na(Score) & !name %in% bad_sites) %>%
+  select(-contains("Skill")) %>% 
+  summarize(across(Score:Categorical, mean)) %>% 
+  kable(digits = 3, table.attr = 'data-quarto-disable-processing="true"') %>% 
+  kable_styling(full_width = FALSE)
+```
+
+```{r}
+#| label: fig-qcomponents
+#| eval: true
+#| fig-cap: "The average score per labeller in each of 4 label quality dimensions: N = agreement between number of digitized between labeller and expert labeller; Edge = nearness of delineated labeller's digitized field edges to expert's field edges; Area = Overall agreement of area of fields digitized by labeller and by expert; Categorical = Agreement of categorical label assignment to fields."
+#| fig-width: 8
+#| fig-height: 10
+
+thm <- theme_linedraw() + 
+  theme(strip.background = element_rect(fill = "transparent"),
+        strip.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90, vjust = 0.5)) 
+
+assignments %>% 
+  filter(!is.na(Score) & !name %in% bad_sites) %>%
+  select(-contains("Skill")) %>% 
+  group_by(Labeller) %>% 
+  summarize(across(Score:Categorical, mean)) %>% 
+  tidyr::pivot_longer(Score:Categorical) %>% 
+  ggplot() + 
+  geom_bar(aes(y = Labeller, x = value), fill = "blue", stat = "identity", 
+           orientation = "y") + 
+  scale_x_continuous(expand = c(0, 0)) +
+  xlab("Score") + ylab("Labeller") + 
+  facet_wrap(~name, ncol = 1) + 
+  thm
+```
+
+The weekly average scores for each metric [@fig-qovertime] can also provide useful insight into increases or decreases in label quality, owing to increasing experience, pressure to meet labeling deadlines, and other factors. The weekly component scores for each labeller are shown in @fig-qovertime_lbler.
+
+```{r}
+#| label: fig-qovertime
+#| fig-cap: "Weekly averages in each of the quality components (excluding categorical)"
+
+assignments %>% 
+  mutate(Week = ceiling_date(as_date(completion_time), "weeks")) %>%   
+  filter(!is.na(Score) & !name %in% bad_sites) %>%
+  select(-contains("Skill")) %>% 
+  group_by(Week) %>% 
+  summarize(ct = n(), across(Score:Area, mean)) %>% 
+  filter(ct > 30) %>% 
+  select(-ct) %>% 
+  tidyr::pivot_longer(cols = Score:Area) %>% 
+  ggplot() + 
+  geom_line(aes(x = Week, y = value, color = name)) + 
+  ylab("Score") + xlab("") + 
+  guides(color = guide_legend("Quality metric")) + 
+  thm
+
+```
+
+```{r}
+#| label: fig-qovertime_lbler
+#| fig-cap: "Weekly scores for each worker in each of the quality components (excluding categorical, and filtering out weeks where only  or fewer Q sites were completed)"
+#| fig-height: 10
+#| fig-width: 8
+
+assignments %>% 
+  mutate(Week = ceiling_date(as_date(completion_time), "weeks")) %>%   
+  filter(!is.na(Score) & !name %in% bad_sites) %>%
+  select(-contains("Skill")) %>% 
+  group_by(Week, Labeller) %>% 
+  summarize(ct = n(), across(Score:Area, mean)) %>% 
+  filter(ct > 2) %>%
+  ungroup() %>% 
+  tidyr::pivot_longer(cols = Score:Area) %>% 
+  ggplot() + 
+  geom_line(aes(x = Week, y = value, color = name)) + 
+  guides(color = guide_legend("Quality metric")) + 
+  ylab("Score") + xlab("") + 
+  facet_wrap(~Labeller, ncol = 3) + 
+  thm
+```
+
+#### Assignment status
+
+The labeling platform assigns a status to each label that includes the folllowing:
+
+-   Abandoned: Assignments begun by a labeller but not completed within 24 hours. These are returned to the system for remapping.
+
+-   Returned: Assignments that were returned to the system unmapped by the labeller, perhaps because of missing imagery, poor image quality, etc.
+
+-   Rejected: Q sites where the labeller's work was scored against the underlying Class 1 labels as being below the 0.4 threshold.
+
+-   Untrusted: F or N assignments completed at a time when the labeller's average score against the last 5 Q sites completed is below a pre-determined trust threshold.
+
+-   Approved: F or N sites completed by a labeller whose last 5 scores had an average score above the trust threshold.
+
+The overall distribution of assignment status is shown in @tbl-status, and the weekly means of non-approved in @fig-weeklystatus.
+
+```{r}
+#| label: tbl-status
+#| tbl-cap: "Number of assignments in each status class."
+#| tbl-colwidths: [25, 25]
+
+assignments %>% 
+  filter(status != "Assigned") %>% 
+  rename(Status = status) %>% 
+  group_by(Status) %>% 
+  count(name = "N") %>% 
+  kable(table.attr = "style='width:30%;'") %>% 
+  kable_styling(bootstrap_options = c("basic", "hover"), full_width = FALSE)
+```
+
+```{r}
+#| fig-cap: "Assignment status summed by week, shown here logarthmically (base 10) scaled."
+#| label: fig-weeklystatus
+
+bad_ct <- assignments %>% 
+  filter(name %in% bad_sites) %>% 
+  count() %>% pull(n)
+
+assignments %>% 
+  filter(status != "Assigned") %>% 
+  rename(Status = status) %>% 
+  mutate(Week = ceiling_date(as_date(completion_time), "weeks")) %>% 
+  # filter(Status != "Approved") %>%
+  group_by(Week) %>% 
+  count(Status, name = "N") %>% #ungroup() %>% 
+  ggplot() + geom_line(aes(x = Week, y = N, color = Status)) + 
+  scale_y_log10() + 
+  thm
+```
+
+Returned and Abandoned assignments were hereafter excluded because they provide no valid label data. The results from an additional `r bad_ct` assignments were dropped, as these corresponded to `r length(bad_sites)` sites where labellers reported missing or cloudy imagery.
+
+```{r}
+#| echo: false
+assignments <- assignments %>%
+  filter(!status %in% c("Assigned", "Abandoned", "Returned")) %>% 
+  filter(!name %in% bad_sites) %>% 
+  select(-comment)
+
+readr::write_csv(assignments, 
+                 file = file.path(inter_dir, "assignments_fullr.csv"))
+
+```
+
+#### Label reviews
+
+Reviews of randomly selected sites were also conducted by two of the supervisory team, using the following rubric (also described \[here\](<https://github.com/agroimpacts/labelreview#review-labels>)):
+
+::: callout-note
+##### Expert review rubric
+
+The following definitions were used to visually review label quality against the Planet imagery:
+
+-   True positive (TP): A field that is correctly labelled as such;
+
+-   True negative (TN): A non-field area that is correctly left unlabelled;
+
+-   False negative (FN): An actual field that should have been mapped, but wasn't;
+
+-   False positive (FP): A non-field area that was incorrectly mapped as a field;
+
+-   Over-segmented (OS): A larger field that was incorrectly divided into many small fields (in these cases, the labeller is making up internal boundaries in the larger field that are not visible in the imagery);
+
+-   Under-segmented (US): Two or more smaller fields that were incorrectly grouped into one larger field, even though boundaries are visible that would enable the smaller fields to be correctly digitized.
+
+Using those definitions, for sites where the imagery shows that there are fields in the imagery, assign one of the following categories to each reviewed site:
+
+-   0: For cases where the labeller maps less than half the site correctly, either by:
+
+    a.  leaving 50% or more of the area covered by actual fields unlabelled (FN);
+    b.  incorrectly mapping more than twice the area of fields that are actually there (FP);
+    c.  correctly mapping the total area covered by fields, but grouping them into a larger field or fields that sum to less than half the total number of fields in the imagery (US);
+    d.  correctly mapping the total areas covered by fields, but falsely dividing them into more than twice the number of individual fields that are actually there (OS);
+
+-   1: The labeller maps 50-70% of the site correctly, either by:
+
+    a.  leaving 30-50% of the area covered by actual fields unlabelled (FN);
+    b.  incorrectly labelling an areas that is 50 to 100% larger than the area of actual fields (FP);
+    c.  correctly mapping the total area covered by fields, but grouping them such that there are only 50-70% of the total number of fields in the imagery (US);
+    d.  correctly mapping the total areas covered by fields, but falsely dividing them into 50 to 100% more fields than are actually there (OS);
+
+-   2: The labeller maps 70-90% of the site correctly, either by:
+
+    a\. leaving 10-30% of the area covered by actual fields unlabelled (FN);
+
+    b.  incorrectly labelling an areas that is 10 to 50% larger than the area of actual fields (FP);
+    c.  correctly mapping the total area covered by fields, but grouping them such that there are only 70-90% of the total number of fields in the imagery (US);
+    d.  correctly mapping the total areas covered by fields, but falsely dividing them into 10 to 50% more fields than are actually there (OS);
+
+-   3: The labeller maps 90+% of the site correctly, such that:
+
+    a.  \<10% of the area covered by actual fields is left unlabelled (FN);
+    b.  The labeled field areas is \<10% larger than the actual field area (FP);
+    c.  the total number of correctly labelled fields is \<10% smaller than the total number of actual fields (US);
+    d.  the total number of correctly labelled fields is \<10% larger than the total number of actual fields (OS);
+
+For sites where then are no fields visible in the imagery, and the labeller correctly classifies them as having no fields, assign a value of 4.
+:::
+
+An evaluation of these score is provided in a separate notebook on [Expert Reviews](expert-reviews.html), including a quantitative comparison of the two experts' reviews for a subset of assignments that were reviewed by both, and the overall mean review scores for each labeller. Here the weekly mean review scores [@fig-weeklyreviews] and weekly mean review scores per labeller [@fig-wkrevlblr] are presented.
+
+```{r}
+#| label: fig-weeklyreviews
+#| fig-cap: "Averages weekly expert review scores for F type (Class 4) sites. The average score across categories 0-3 was calculated (category 4 was excluded), as well as the average of review score recoded to 0 (a 0 or 1 review score) or 1 (review score of 2-4)."
+assignments %>% 
+  mutate(Week = ceiling_date(as_date(completion_time), "weeks")) %>%   
+  filter(!is.na(rscore) & Type == "F") %>% 
+  select(Week, rscore, rscore2) %>% 
+  group_by(Week) %>% 
+  summarize(ct = n(), rscore = mean(rscore[rscore != 4]), 
+            rscore2 = mean(rscore2)) %>% 
+  filter(ct > 1) %>% 
+  select(-ct) %>% 
+  tidyr::pivot_longer(cols = rscore:rscore2) %>% 
+  ggplot() + geom_line(aes(x = Week, y = value, color = name)) + 
+  ylab("Review Score") + xlab("") + 
+  guides(color = guide_legend("Score type"), ) + 
+  scale_color_manual(labels = c("Categories 1-3", "Binary"), 
+                     values = c("red", "blue")) + 
+  thm
+```
+
+```{r}
+#| label: fig-wkrevlblr
+#| fig-cap: "Averages weekly expert review scores for each labeller for F type (Class 4) sites. The average score across categories 0-3 was calculated (category 4 was excluded), as well as the average of review score recoded to 0 (a 0 or 1 review score) or 1 (review score of 2-4)."
+#| fig-height: 10
+#| fig-width: 8
+
+assignments %>% 
+  mutate(Week = ceiling_date(as_date(completion_time), "weeks")) %>%   
+  filter(!is.na(rscore) & Type == "F") %>% 
+  select(Week, Labeller, rscore, rscore2) %>% 
+  group_by(Week, Labeller) %>% 
+  summarize(ct = n(), rscore = mean(rscore[rscore != 4]), 
+            rscore2 = mean(rscore2)) %>% 
+  ungroup() %>% 
+  # filter(ct > 1) %>% 
+  select(-ct) %>%
+  tidyr::pivot_longer(cols = rscore:rscore2) %>% 
+  ggplot() + geom_line(aes(x = Week, y = value, color = name)) + 
+  ylab("Review Score") + xlab("") + 
+  guides(color = guide_legend("Score type"), ) + 
+  scale_color_manual(labels = c("Categories 1-3", "Binary"), 
+                     values = c("red", "blue")) + 
+  facet_wrap(~Labeller, ncol = 3) + thm 
+```
+
+### Number and area of fields
+
+```{r}
+#| label: fstats
+#| echo: false
+
+load(here::here("data/interim/fieldsizes.rda"))
+muflds <- round(mean(assignments$nflds, na.rm = TRUE), 1)
+nzoflds <- length(which(assignments$nflds == 0))
+musize <- round(fldsizes["mean"], 2)
+medsize <- round(fldsizes["median"], 2)
+
+exclsizes <- assignments %>% 
+  filter(!is.na(farea) & farea > 15) %>% 
+  nrow(.) / nrow(assignments)
+```
+
+The distributions of the number of fields digitized per site, along with average size of digitized fields, is shown in @fig-nfldshist, indicating strongly right-skewed distributions, with the most common result being 0-5 fields and 0.5-1 ha per site. The average number of fields digitized per site was `r muflds`, with `r nzoflds` having no fields digitized (note: untrusted, returned, and rejected sites were excluded from the counts). Across all digitized polygons (`r fldsizes["n"]` total), the average and median field sizes were `r musize` and `r medsize` ha.
+
+```{r}
+#| label: fig-nfldshist
+#| eval: True
+#| fig-width: 9
+#| fig-cap: "The distribution of the numbers of fields digitized per assignment (left), including the average number and the total number of sites that were assessed as having no fields, and the average size of fields (in hectares) per site (note: 2% of sites have mean sizes >15 ha, and are not shown here), along with the mean and median of digitized field sizes."
+
+nflds <- glue::glue("Mean fields per site = {muflds}")
+zeroflds <- glue::glue("Sites with no fields = {nzoflds}")
+medha <- glue::glue("Median field size = {medsize} ha")
+muha <- glue::glue("Mean field size = {musize} ha")
+
+yl <- c(12000, 11000)
+p <- ggplot(assignments) + 
+  geom_histogram(aes(x = nflds), fill = "blue", color = "grey", binwidth = 5, 
+                 boundary = 0, closed = "left") +
+  xlab("Number of fields digitized") + ylab("N sites") + 
+  scale_x_continuous(limits = c(0, 150), breaks = seq(0, 300, 10), 
+                     expand = c(0, 0)) + 
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1)), limits = c(0, yl[1]), 
+                     breaks = seq(0, yl[1], 2000)) + 
+  annotate("text", x = 70, y = yl[1], label = nflds) + 
+  annotate("text", x = 70, y = yl[2], label = zeroflds) + 
+  thm 
+
+p2 <- ggplot(assignments) + 
+  geom_histogram(aes(x = farea), fill = "blue", color = "grey", 
+                 boundary = 0, closed = "left") +
+  xlab("Average field size per site (ha)") + ylab("") + 
+  scale_x_continuous(limits = c(0, 15), breaks = seq(0, 15, 0.5), 
+                     expand = c(0, 0)) + 
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1)), limits = c(0, yl[1]), 
+                     breaks = seq(0, yl[1], 2000)) + 
+  annotate("text", x = 7, y = yl[1], label = muha) + 
+  annotate("text", x = 7, y = yl[2], label = medha) + 
+  thm + theme(axis.text.y = element_blank())
+p + p2
+```
+
+The weekly average number of fields digitized per site is shown in @fig-nfldsweek, showing a peak in late December/early January, along with the average area, which shows a peak in mid-January. These latter two trends may indicate a tendency to under-segment during the last two months, or over-segment in the first two months.
+
+```{r}
+#| label: fig-nfldsweek
+#| eval: True
+#| fig-cap: "The average number (top) and area (bottom) of fields digitized per assignment by week."
+
+sizearea_week <- assignments %>%
+  mutate(Week = ceiling_date(as_date(completion_time), "weeks")) %>%   
+  group_by(Week) %>% 
+  summarize(nflds = mean(nflds, na.rm = TRUE), 
+            farea = mean(farea, na.rm = TRUE))
+
+p <- ggplot(sizearea_week) + 
+  geom_line(aes(x = Week, y = nflds)) + 
+  ylab("N fields digitized") + xlab("") + 
+  thm + theme(axis.text.x = element_blank())
+  
+p2 <- ggplot(sizearea_week) + 
+  geom_line(aes(x = Week, y = farea)) + 
+  ylab("Average field area") + xlab("") + 
+  thm
+
+p / p2
+```
+
+## Spatial distributions
+
+The spatial distribution of the different sample classes and the number of times each location was mapped is shown in @fig-plotmap.
+
+```{r}
+#| label: fig-plotmap
+#| eval: true
+#| fig-cap: "The distribution of sites mapped by assignment type (F = Class 2; N = Class 4; Q = quality control sites) and the number of times each were mapped."
+#| fig-width: 8
+#| fig-height: 4 
+africa <- st_read(here::here("data/external/africa.geojson"), quiet = TRUE)
+assignments_sf <- assignments %>% 
+  filter(!status %in% c("Abandoned", "Assigned", "Returned")) %>% 
+  group_by(name, Type) %>% 
+  summarize(N = n(), farea = mean(farea), x = mean(x), y = mean(y)) %>% 
+  ungroup() %>% 
+  st_as_sf(coords = c("x", "y"), crs = 4326)
+bb <- st_bbox(assignments_sf)
+
+ggplot(africa) + geom_sf() + 
+  geom_sf(data = assignments_sf, aes(color = N), size = 1, pch = "+") + 
+  scale_color_viridis_b(direction = -1, option = "D", 
+                        breaks = c(1, 2, 3, 5, 14)) + 
+  facet_wrap(~Type) + 
+  theme_void() + 
+  theme(legend.position = "bottom",
+        panel.spacing.y = unit(-2, "lines"), 
+        panel.spacing.x = unit(-1, "lines"))
+
+```
+
+```{r}
+#| label: fig-fldareamap
+#| echo: false
+#| fig-cap: "The distribution of sites mapped by assignment type (F = Class 2; N = Class 4; Q = quality control sites) and the average sizes of fields at each site."
+#| fig-width: 8
+#| fig-height: 4 
+
+ggplot(africa) + geom_sf() + 
+  geom_sf(data = assignments_sf, aes(color = farea), size = 1, pch = "+") + 
+  scale_color_viridis_b(name = "ha", direction = -1, option = "D", 
+                        transform = "log10", 
+                        breaks = c(0.01, 1, 2, 5, 10, 100, 350)) + 
+  # guides(color = guide_legend("ha")) +
+  facet_wrap(~Type) + 
+  theme_void() + 
+  theme(legend.position = "bottom",
+        panel.spacing.y = unit(-2, "lines"), 
+        panel.spacing.x = unit(-1, "lines"), 
+        legend.text = element_text(angle = 90))
+
+```
