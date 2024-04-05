@@ -1,0 +1,193 @@
+---
+title: "Prepare Assignment Catalog"
+author: "Lyndon Estes"
+editor: visual
+format: html
+engine: knitr
+execute:
+  echo: false
+  warning: false
+  message: false
+toc: true
+number-sections: true
+toc-depth: 6
+bibliography: references.bib
+---
+
+```{r}
+#| echo: false
+#| message: false
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(lubridate)
+library(patchwork)
+```
+
+```{r}
+#| label: paths
+root_dir <- here::here("data/")
+raw_dir <- file.path(root_dir, "raw")
+inter_dir <- file.path(root_dir, "interim")
+fetch_dir <- "~/Dropbox/projects/labelreview"
+```
+
+## Overview
+
+The assembled quality metrics are used to develop a set of quality ranking associated with each label, and combined with the processed assignment catalog (from the [analyze assignments notebook](analyze-assignments.html)) to make a final assignment catalog with general information on label quality.
+
+## Label ranking system
+
+```{r}
+#| eval: true
+#| echo: false
+
+assignments <- readr::read_csv(file.path(inter_dir, "assignments_fullr.csv"))
+# assignments %>% 
+#   filter(Type == "Q" & !is.na(rscore)) %>% 
+#   arrange(name) %>% View()
+# assignments %>%
+#   filter(Type == "Q" & is.na(rscore)) %>%
+#   arrange(name) %>% View()
+```
+
+### General quality measures
+
+Using the various quality metrics, several measures of labeller quality can be calculated, which are then assigned to all sites mapped by a given labeller.
+
+The first set of measures were derived from the Q assignment scores, using the individual measures for overall Score, N, Edge, and Area, and calculating the average of these for each labeller. The second set are from the expert review rankings, which are provided for all 5 ranking categories, and for the simplified binary categorization. A comparison of the average score for each labeller from both variants shows that the simplified binary metric has a strong, nearly perfect linear relationship [@fig-rscores] with the more detailed 5 category measure (note: category 4 was recoded to 3 in calculating the per labeller averages, to avoid giving more weight for correctly identified negative sites). This simpler measure was therefore selected to use in preference to the more complicated measure, given that it had a greater level of between-expert agreement (see analysis of expert labels).
+
+```{r}
+#| label: fig-rscores
+#| eval: true
+#| echo: false
+#| fig-cap: "The relationship between the average expert review score for each labeller, as calculated from the average of all 5 ranking categories (x axis), and from the simplified binary score (y-axis)."
+
+rscores <- assignments %>% 
+  mutate(rscore = ifelse(rscore == 4, 3, rscore)) %>% 
+  filter(!is.na(rscore)) %>% 
+  select(name, Labeller, rscore:rscore2) %>% 
+  group_by(Labeller) %>% 
+  summarize(rscore = mean(rscore), rscore2 = mean(rscore2)) 
+
+qrscores <- assignments %>% 
+  filter(Type == "Q") %>% 
+  filter(!is.na(Score)) %>% 
+  select(name, Labeller, Score:Area) %>% 
+  group_by(Labeller) %>% 
+  summarize(across(Score:Area, mean)) %>% 
+  left_join(rscores)
+
+rcor <- round(cor.test(qrscores$rscore, qrscores$rscore2)$estimate, 3)
+ggplot(qrscores) +
+  geom_point(aes(x = rscore, y = rscore2)) +
+  geom_smooth(aes(x = rscore, y = rscore2), method = "lm", se = FALSE) + 
+  ggtitle(glue::glue("r = {rcor}")) + 
+  labs(x = "Mean score (all categories)", y = "Mean binary score") + 
+  theme_linedraw()
+
+```
+
+A Spearman-rank correlation analysis of the mean Q score metrics and the binary expert review scores (Rscore) reveals that the expert scores are most correlated (based on non-parametric Kendall rank correlation coefficient) with the overall Q score, followed by area mapped (Area) and number of fields (N), and were least correlated with edge accuracy [@fig-scorecor]. The relative strength of these associations reflects the nature of expert reviews, which were quick assessments of whether labellers captured the overall area of fields in the image correctly, and whether they over- or under-segmented (an assessment most closely related to the N measure). Within the Q score measures, the Area and Edge were most strongly associated with one another while N and Area were least associated.
+
+```{r}
+#| label: fig-scorecor
+#| echo: false
+#| fig-cap: "Scatter plots of the relationships between the per labeller averages of the various score components, comparing the expert-based Rscore against the 4 Q score based measures, and Area against Edge and N. Regressions were fit using the Theil-Sen estimator with correlations based on the Kendall Rank correlation coefficient. Numbers in the plot are labeller IDs."
+#| fig-width: 8
+#| fig-height: 8
+
+# Theil-Sen, from here:
+# https://stackoverflow.com/questions/48349858/
+# how-can-i-use-theil-sen-method-with-geom-smooth
+sen <- function(..., weights = NULL) {
+  mblm::mblm(...)
+}
+
+qrscores <- qrscores %>% 
+  select(-rscore) %>% 
+  rename(Rscore = rscore2)
+
+# cor.test(qrscores[["Rscore"]], qrscores[["Edge"]], method = "kendall")
+# cor.test(qrscores[["Area"]], qrscores[["N"]], method = "kendall")
+ps <- lapply(c("Score", "Area", "N", "Edge"), function(x) {
+  rcor <- cor.test(qrscores[["Rscore"]], qrscores[[x]], method = "kendall")
+  ggplot(qrscores) + 
+    geom_text(aes(x = Rscore, y = get(x), label = Labeller), size = 3, color = "red") + 
+    geom_smooth(aes(x = Rscore, y = get(x)), method = sen, se = FALSE) + 
+    ylab(x) + ggtitle(glue::glue("Kendall rank correlation = {round(rcor$estimate, 3)}")) +     theme_linedraw()
+})
+ps2 <- lapply(c("N", "Edge"), function(x) {
+  rcor <- cor.test(qrscores[["Area"]], qrscores[[x]], method = "kendall")
+  ggplot(qrscores) + 
+    geom_text(aes(x = Area, y = get(x), label = Labeller), size = 3, color = "red") +
+    geom_smooth(aes(x = Area, y = get(x)), method = sen, se = FALSE) + 
+    ylab(x) + ggtitle(glue::glue("Kendall rank correlation = {round(rcor$estimate, 3)}")) +
+    theme_linedraw()
+})
+
+(ps[[1]] + ps[[2]]) / (ps[[3]] + ps[[4]]) / (ps2[[1]] + ps2[[2]])
+```
+
+Given these results, 3 of the metrics were retained to provide general measures of label quality: Score, N, and Rscore. Edge was not included, given its generally low overall value, while Area was dropped because it is the largest contributor to Score. The labeller mean Score and N were respectively renamed to Qscore and QN, while the values of Score and N, along with Edge, Area, and rscore and rscore2 were retained in the dataset for their specific assignments. These specific scores are recommended for selecting high quality sites for model fine-tuning and/or final model validation.
+
+## Assignment catalog
+
+The final assignment catalog contains the aforementioned specific and general quality measures, along the site name, assignment ID, the assignment type, labeller ID, the time in minutes spent completing the assignment, the date and time the assignment was completed, the number of fields digitized for the assignment, and the average area of digitized fields.
+
+```{r}
+#| label: assignweights
+#| echo: false
+
+assignment_catalog <- qrscores %>%
+  select(Labeller, Score, N, Rscore) %>%
+  rename(Qscore = Score, QN = N) %>%
+  left_join(assignments, .) %>% 
+  mutate(label_time = as.numeric(completion_time - start_time) / 60) %>%
+  select(name, assignment_id, Type, Labeller, label_time, completion_time,
+         farea, nflds, status, Score:Categorical, rscore:rscore2, 
+         Qscore:Rscore, x, y)
+```
+
+Join with the tile data as reference for chipping.
+
+```{r}
+#| echo: false
+
+tile_catalog <- readr::read_csv(
+  here::here("data/interim/main_grid_allcats_tiles_final.csv")
+) %>% rename(Type = type) %>% 
+  select(-id)
+
+# add names to assignments of Class 1 sites that were not mapped by other
+# workers, for chipping.
+# get bad site names and mgrid to find N sites not mapped (Class 1 sites) added
+# for mapping
+load(here::here("data/interim/bad_sites.rda"))
+mgrid <- readr::read_csv(file.path(raw_dir, "maingrid.csv")) %>% 
+  select(-c(1:3))
+
+# combine with assignment_catalog. Labeller = 0 means expert
+class1_remaining <- mgrid %>% 
+  filter(!name %in% unique(assignment_catalog$name) & avail == "N") %>% 
+  filter(!name %in% bad_sites) %>% 
+  select(-fwts, -avail) %>% 
+  rename(image_date = date) %>% 
+  left_join(., tile_catalog) %>% 
+  mutate(Labeller = 0)
+
+# Make chipping catalog
+# class1_remaining %>% filter(name %in% unique(assignment_catalog$name))
+chipping_catalog <- assignment_catalog %>% 
+  left_join(., tile_catalog) %>% 
+  bind_rows(class1_remaining)
+  # select(name, tile, image_date, destfile)
+  # group_by(Class, status) %>% count()
+chipping_catalog %>% filter(Labeller == 0) %>% View()
+  
+readr::write_csv(chipping_catalog, 
+                 file = "data/interim/assignments_full_wtiles.csv")
+  
+```

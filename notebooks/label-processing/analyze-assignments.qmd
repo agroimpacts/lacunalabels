@@ -1,6 +1,6 @@
 ---
 title: "Basic Assignment Metrics"
-author: "Lyndon Estes"
+# author: "Lyndon Estes"
 editor: visual
 format: html
 engine: knitr

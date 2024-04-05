@@ -22,7 +22,7 @@ library(patchwork)
 library(knitr)
 ```
 
-Each expert reviewed several thousand site mapped by other labellers, including by other experts, using a four category ranking system described \[here\](<https://github.com/agroimpacts/labelreview#review-labels>).
+Each expert reviewed several thousand site mapped by other labellers, including by other experts, using a four category ranking system described [here](https://github.com/agroimpacts/labelreview#review-labels).
 
 Here we compare 1) how well the experts agree on these rankings, and 2) what the ranking statistics revealed about overall label quality.
 
