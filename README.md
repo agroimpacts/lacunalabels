@@ -31,6 +31,6 @@ Gyan, V., Harrison X.G., Heltzel, E., Juma, C., Mdawida, R., Miroyo, A.,
 Mucha, J., Mugami, J., Mwawaza, F., Nyarko, D., Oduor, P., Ohemeng, K.,
 Segbefia, S.I.D., Tumbula, T., Wambua, F., Yeboah, F., Estes, L.D.,
 2024. A region-wide, multi-year set of crop field boundary labels for
-Africa. Dataset on Zenodo. <https://zenodo.org/record/11060871>.
+Africa. Dataset on Zenodo. DOI 10.5281/zenodo.11060870.
 
 ![](notebooks/report/images/fig-fldareamap-1.png)

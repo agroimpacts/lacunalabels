@@ -11,6 +11,6 @@ The data can currently be obtained from the Zenodo link, and will be also be add
 
 Please cite the dataset as follows:
 
-Wussah, A., Asipunu, M., Gathigi, M., Kovačič, P., Muhando, J., Addai, F., Akakpo, E.S., Allotey, M., Amkoya, P., Amponsem, E., Dadon, K.D., Gyan, V., Harrison X.G., Heltzel, E., Juma, C., Mdawida, R., Miroyo, A., Mucha, J., Mugami, J., Mwawaza, F., Nyarko, D., Oduor, P., Ohemeng, K., Segbefia, S.I.D., Tumbula, T., Wambua, F., Yeboah, F., Estes, L.D., 2024. A region-wide, multi-year set of crop field boundary labels for Africa. Dataset on Zenodo. <https://zenodo.org/record/11060871>.
+Wussah, A., Asipunu, M., Gathigi, M., Kovačič, P., Muhando, J., Addai, F., Akakpo, E.S., Allotey, M., Amkoya, P., Amponsem, E., Dadon, K.D., Gyan, V., Harrison X.G., Heltzel, E., Juma, C., Mdawida, R., Miroyo, A., Mucha, J., Mugami, J., Mwawaza, F., Nyarko, D., Oduor, P., Ohemeng, K., Segbefia, S.I.D., Tumbula, T., Wambua, F., Yeboah, F., Estes, L.D., 2024. A region-wide, multi-year set of crop field boundary labels for Africa. Dataset on Zenodo. DOI 10.5281/zenodo.11060870.
 
 ![](notebooks/report/images/fig-fldareamap-1.png)
