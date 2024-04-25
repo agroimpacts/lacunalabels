@@ -1,5 +1,5 @@
 ---
-title: "Prepare Assignment Catalog"
+title: "Prepare Intermediate Assignment Catalog"
 author: "Lyndon Estes"
 editor: visual
 format: html
@@ -36,7 +36,7 @@ fetch_dir <- "~/Dropbox/projects/labelreview"
 
 ## Overview
 
-The assembled quality metrics are used to develop a set of quality ranking associated with each label, and combined with the processed assignment catalog (from the [analyze assignments notebook](analyze-assignments.html)) to make a final assignment catalog with general information on label quality.
+The assembled quality metrics were used to develop a set of quality ranking associated with each label, and combined with the processed assignment catalog (from the [analyze assignments notebook](analyze-assignments.html)) to make an interim assignment catalog with general information on label quality. The final assignment catalog was developed in [prepare_fields.qmd](prepare_fields.qmd), where Class 1 labels and quality metrics were added. The interim catalog here provides the inputs for chipping the Planet imagery to their final outputs, as all images were represented in these assignments (excluding those flagged as low quality).
 
 ## Label ranking system
 
@@ -45,6 +45,10 @@ The assembled quality metrics are used to develop a set of quality ranking assoc
 #| echo: false
 
 assignments <- readr::read_csv(file.path(inter_dir, "assignments_fullr.csv"))
+# assignments %>% filter(status == "Approved" & is.na(nflds))
+# assignments %>% filter(status == "Approved" & is.na(farea)) %>%
+#  select(assignment_id, Type, farea, nflds)
+
 # assignments %>% 
 #   filter(Type == "Q" & !is.na(rscore)) %>% 
 #   arrange(name) %>% View()
@@ -115,16 +119,21 @@ qrscores <- qrscores %>%
 ps <- lapply(c("Score", "Area", "N", "Edge"), function(x) {
   rcor <- cor.test(qrscores[["Rscore"]], qrscores[[x]], method = "kendall")
   ggplot(qrscores) + 
-    geom_text(aes(x = Rscore, y = get(x), label = Labeller), size = 3, color = "red") + 
+    geom_text(aes(x = Rscore, y = get(x), label = Labeller), size = 3, 
+              color = "red") + 
     geom_smooth(aes(x = Rscore, y = get(x)), method = sen, se = FALSE) + 
-    ylab(x) + ggtitle(glue::glue("Kendall rank correlation = {round(rcor$estimate, 3)}")) +     theme_linedraw()
+    ylab(x) + 
+    ggtitle(glue::glue("Kendall rank correlation = {round(rcor$estimate,3)}")) + 
+    theme_linedraw()
 })
 ps2 <- lapply(c("N", "Edge"), function(x) {
   rcor <- cor.test(qrscores[["Area"]], qrscores[[x]], method = "kendall")
   ggplot(qrscores) + 
-    geom_text(aes(x = Area, y = get(x), label = Labeller), size = 3, color = "red") +
+    geom_text(aes(x = Area, y = get(x), label = Labeller), size = 3, 
+              color = "red") +
     geom_smooth(aes(x = Area, y = get(x)), method = sen, se = FALSE) + 
-    ylab(x) + ggtitle(glue::glue("Kendall rank correlation = {round(rcor$estimate, 3)}")) +
+    ylab(x) + 
+    ggtitle(glue::glue("Kendall rank correlation = {round(rcor$estimate,3)}")) +
     theme_linedraw()
 })
 
@@ -135,7 +144,7 @@ Given these results, 3 of the metrics were retained to provide general measures 
 
 ## Assignment catalog
 
-The final assignment catalog contains the aforementioned specific and general quality measures, along the site name, assignment ID, the assignment type, labeller ID, the time in minutes spent completing the assignment, the date and time the assignment was completed, the number of fields digitized for the assignment, and the average area of digitized fields.
+The interim assignment catalog contains the aforementioned specific and general quality measures, along the site name, assignment ID, the assignment type, labeller ID, the time in minutes spent completing the assignment, the date and time the assignment was completed, the number of fields digitized for the assignment, and the average area of digitized fields.
 
 ```{r}
 #| label: assignweights
@@ -149,6 +158,9 @@ assignment_catalog <- qrscores %>%
   select(name, assignment_id, Type, Labeller, label_time, completion_time,
          farea, nflds, status, Score:Categorical, rscore:rscore2, 
          Qscore:Rscore, x, y)
+# assignment_catalog %>% filter(status == "Approved" & is.na(farea)) %>% 
+#  select(assignment_id, Type, farea, nflds)
+
 ```
 
 Join with the tile data as reference for chipping.
@@ -185,9 +197,10 @@ chipping_catalog <- assignment_catalog %>%
   bind_rows(class1_remaining)
   # select(name, tile, image_date, destfile)
   # group_by(Class, status) %>% count()
-chipping_catalog %>% filter(Labeller == 0) %>% View()
-  
-readr::write_csv(chipping_catalog, 
-                 file = "data/interim/assignments_full_wtiles.csv")
-  
+# chipping_catalog %>% filter(status == "Approved" & is.na(farea)) %>%
+#  select(assignment_id, Type, farea, nflds)
+
+# chipping_catalog %>% filter(Labeller == 0) %>% View()
+readr::write_csv(chipping_catalog,
+                 file = here::here("data/interim/assignments_full_wtiles.csv"))
 ```

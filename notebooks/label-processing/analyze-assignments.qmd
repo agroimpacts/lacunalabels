@@ -168,9 +168,9 @@ assignments <- assignments %>%
   mutate(worker_id = as.character(worker_id)) %>% 
   left_join(., review_reduced2) %>% 
   left_join(., flds_ctarea) %>% 
-  left_join(., quality, by = "assignment_id") %>% 
+  left_join(., quality, by = "assignment_id") %>%
   mutate(nflds = ifelse(is.na(nflds) & status == "Approved", 0, nflds)) %>% 
-  mutate(area = ifelse(is.na(farea) & status == "Approved", 0, farea)) %>% 
+  mutate(farea = ifelse(is.na(farea) & status == "Approved", 0, farea)) %>% 
   left_join(., mgrid %>% select(name, x, y)) %>% 
   rename(Labeller = worker_id, Type = kml_type)
 
@@ -186,9 +186,11 @@ bad_sites <- assignments %>%
   pull(name) %>% unique(.)
 save(bad_sites, file = here::here("data/interim/bad_sites.rda"))
 # assignments %>%
-#   filter(!name %in% bad_sites) 
+#    filter(!name %in% bad_sites) 
 readr::write_csv(assignments, 
                  file = file.path(inter_dir, "assignments_full.csv"))
+# assignments %>% filter(status == "Approved" & is.na(farea)) %>%
+#  select(assignment_id, Type, farea, nflds)
 ```
 
 ```{r}
