@@ -20,6 +20,8 @@ The data can currently be obtained from the Zenodo link, and will be
 also be added to [Source Cooperative](https://source.coop/). It’s usage
 is governed by Planet’s [participant license agreement for the NICI
 contract](https://assets.planet.com/docs/Planet_ParticipantLicenseAgreement_NICFI.pdf).
+The code used to annotate and analyze the data is available under an
+[Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0).
 
 Please cite the dataset as follows:
 
