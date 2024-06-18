@@ -2,44 +2,69 @@ import os
 import re
 import pandas as pd
 import leafmap.leafmap as leafmap
+from matplotlib import pyplot as plt
 import logging
+import rioxarray as rxr
 
-def view_random_label(catalog, label_dir, chip_dir, bands=[1,2,3], 
-                      seed=None): 
+def view_random_label(catalog, label_dir, chip_dir, bands, interactive=False, 
+                      seed=None, width=12, height=5): 
     """
     A leafmap-based viewer that enables comparison of a randomly selected
     label against of the image chip
 
-    Args: 
-    catalog: pandas.DataFrame
+    Params:
+    -------
+    catalog : pandas.DataFrame
         The processed label catalog
-    label_dir: str
+    label_dir : str
         The path to the label directory (not strings only, not Path)
-    chip_dir: str
+    chip_dir : str
         The path to the image chip directory (not strings only, not Path)
-    bands: list
-        Specify band combination for the image chip. Defaults to [1,2,3] for 
-        true color
-    seed: int
-        Defaults to None, but the same chip can be selected again if an integer
-        is provided
+    bands : list
+        Specify band combination for the image chip
+    interactive : bool, default = False
+        Whether to plot with an interactive leafmap or matplotlib.        
+    seed: int, default is None
+        Use an integer seed to ensure the same chip can be selected again
+    width : int, default is 12
+        Width of plot
+    height : int, default is 5
+        Height of plot
 
-    Returns: 
-        A leafmap viewer
+    Returns:
+    --------
+    A leafmap viewer or matplotlib-based plots. The latter can be 
+    needed for installs where localtileserver doesn't work correctly with 
+    leafmap.
     """
     random_label = catalog.sample(n=1, random_state=seed)
     lbl_path = os.path.join(label_dir, random_label.label.iloc[0])
-    chip_path = os.path.join(chip_dir, random_label.chip.iloc[0])
-    lbl_name = re.sub(".tif", "", random_label.label.iloc[0])
-    m = leafmap.Map(
-        zoom=17, center=random_label[["y", "x"]].iloc[0].to_list()
-    )
-    m.add_basemap("SATELLITE")
-    m.add_raster(chip_path, bands=[1,2,3], layer_name='Image', 
-                 zoom_to_layer=False)
-    m.add_raster(lbl_path, layer_name=lbl_name,zoom_to_layer=False)
-    return m
+    chip_path = os.path.join(chip_dir, random_label.image.iloc[0])
 
+    if interactive:
+        lbl_name = re.sub(".tif", "", random_label.label.iloc[0])
+        m = leafmap.Map(
+            zoom=17, center=random_label[["y", "x"]].iloc[0].to_list()
+        )
+        m.add_basemap("SATELLITE")
+        m.add_raster(chip_path, bands=bands, layer_name='Image', 
+                     zoom_to_layer=False)
+        m.add_raster(lbl_path, layer_name=lbl_name, zoom_to_layer=False)
+        return m
+    else:
+        lbl = rxr.open_rasterio(lbl_path)
+        img = rxr.open_rasterio(chip_path)
+        fig, (ax1, ax2) = plt.subplots(1, 2)
+        fig.set_size_inches(12, 5, forward=True)
+        lbl.plot(ax=ax1, add_colorbar=False)
+        ax2.set_title("Label")
+        ax1.set_xlabel('')
+        ax1.set_ylabel('')       
+        img[bands].plot.imshow(ax=ax2, robust=True)
+        ax2.set_xlabel('')
+        ax2.set_ylabel('')
+        ax2.set_title(f"Image for {random_label.name}")
+        
 def log_message(msg, verbose, logger=None):
     """Helps control print statements and log writes
 
@@ -62,8 +87,6 @@ def log_message(msg, verbose, logger=None):
 
     if logger:
         logger.info(msg)
-
-
 
 def setup_logger(logfile, use_date=False):
     """Create logger

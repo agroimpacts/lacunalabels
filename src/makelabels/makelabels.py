@@ -1,6 +1,7 @@
 import os
 import rasterio
 from rasterio.enums import Resampling
+from rasterio import features
 import xarray as xr
 import rioxarray as rxr
 import numpy as np
@@ -177,7 +178,7 @@ class MakeLabels:
 
         return catrow
     
-    def threeclass_label(self, assignment, label_dir, chip_dir, fields, 
+    def threeclass_label(self, catrow, label_dir, chip_dir, src_col, fields, 
                          verbose=True, overwrite=True) -> pd.Series:
         """
         Create a three class label (0: non-field, 1: field interior, 
@@ -186,14 +187,16 @@ class MakeLabels:
 
         Parameters:
         -----------
-        assignment: pandas.Series
-            A series representing one assignment from the label catalog
+        catrow: pandas.Series
+            A series representing one row (assignment) from the label catalog
         fields: geopandas.GeoDataFrame
             The fields polygons, read in from the provided geoparquet file
         label_dir: str
             Directory to write rasterized labels to
         chip_dir : str
             Directory containing image chips
+        src_col : str
+            Name of column in row that contains the source image name
         verbose : bool, default True
             Whether to print messages or not
         overwrite: bool
@@ -204,8 +207,8 @@ class MakeLabels:
         A pandas.Series containing details of the written labels
         """
 
-        lbl_name = f"{re.sub('.tif', '', assignment.chip)}-"\
-            f"{assignment.assignment_id}.tif"
+        name_parts = catrow[src_col].split("_")
+        lbl_name = f"{name_parts[0]}_{catrow['assignment_id']}_{name_parts[1]}"
         dst = Path(label_dir) / lbl_name
 
         if not overwrite and os.path.exists(dst):
@@ -213,7 +216,7 @@ class MakeLabels:
             log_message(msg, verbose, logger=self.logger)
 
         else: 
-            chip = rxr.open_rasterio(Path(chip_dir) / assignment.chip)
+            chip = rxr.open_rasterio(Path(chip_dir) / catrow[src_col])
 
             transform = chip.rio.transform()
             _, r, c = chip.shape
@@ -223,9 +226,10 @@ class MakeLabels:
                                     crs=chip.rio.crs)
 
             out_arr = np.zeros((r, c)).astype('int16')
-            if assignment.nflds > 0:
+            if catrow["nflds"] > 0:
 
-                shp = fields.query("assignment_id==@row.assignment_id").copy()
+                shp = fields[fields['assignment_id'] == \
+                             catrow['assignment_id']].copy()
 
                 shp["category"] = 1
                 shp['buffer_in'] = shp.geometry.buffer(-res)
@@ -278,7 +282,7 @@ class MakeLabels:
             lbl_raster = xr.DataArray(
                 lbl,
                 dims=["y", "x"],
-                coords={"y": chip.y, "x": chip.x},
+                coords={"y": chip["y"], "x": chip["x"]},
                 attrs={"transform": transform, "crs": chip.rio.crs}
             )
 
@@ -301,11 +305,63 @@ class MakeLabels:
             msg = f"Created {os.path.basename(dst)}"
             log_message(msg, verbose, logger=self.logger)
 
-        assignment_out = assignment.copy()
-        assignment_out["label"] = lbl_name
+        catrow_out = catrow.copy()
+        catrow_out["label"] = lbl_name
 
-        return pd.DataFrame([assignment_out.to_list()], 
-                            columns=assignment_out.index)
+        return catrow_out
+    
+    def filter_catalog(self, catalog, groups, metric, keep) -> pd.DataFrame:
+        """
+        Function to filter the full catalog by class and quality metric
+
+        Params:
+        -------
+        catalog: pandas.DataFrame
+            The full catalog, read in
+        groups: list
+            A list of key-value pairs providing with possible keys of "whole" and 
+            "best", with the values providing one or more of the label classes. 
+            Classes corresponding to "whole" will have all assignments in the class
+            selected. "Best" will result in the best assignment 
+            corresponding to the provided metric selected/
+        metric: str
+            One of the quality metrics in the catalog, e.g. Rscore, Qscore. Must be 
+            provided if a key in groups is not "whole"
+        keep: list
+            Names of columns in the full catalog that should be kept in the 
+            filtered catalog
+
+        Returns:
+        --------
+        A DataFrame containing the filtered assignments, possibly with 
+        duplicates. If so, you may wish to remove them by following up with a 
+        `drop_duplicates()`
+        """
+        out_catalog = []
+        for g in groups:
+            cls = list(g.values())[0]
+            cat = catalog.query("Class in @cls")
+            if list(g.keys())[0] == "whole":
+                print(f"Extracting all of Class {' and '.join(cls)}")
+                out_catalog.append(cat)
+            elif list(g.keys())[0] == "best": 
+                print(f"Extracting best of Class {' and '.join(cls)}")
+                out_catalog.append(
+                    cat.groupby("name")
+                    .apply(lambda x: x.loc[[x[metric].idxmax()]] 
+                           if not x[metric].isna().all() else x, 
+                           include_groups=False)
+                    .reset_index(level=["name"])
+                )
+            else: 
+                print("Use either 'whole' or 'best' as group keys")
+                break 
+
+        out_catalog = (
+            pd.concat(out_catalog, axis=0)[keep]
+            .reset_index(drop=True)
+        )
+        return out_catalog
    
     def run_parallel_pool(self, catalog, function, args, nworkers=None): 
         """
@@ -332,7 +388,7 @@ class MakeLabels:
         
         return results
 
-    def run_parallel_thread(self, catalog, function, args, nworkers=None): 
+    def run_parallel_threads(self, catalog, function, args, nworkers=None): 
         """
         Runs one of the class functions concurrently, using threads
         
