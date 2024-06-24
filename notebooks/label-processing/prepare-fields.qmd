@@ -311,6 +311,7 @@ class1_assignments <- left_join(class1_assignments, expert_rscoresr)
 ```
 
 ### Pick up x,y coordinates
+
 ```{r}
 #| eval: false
 mgrid <- readr::read_csv(file.path(raw_dir, "maingrid.csv"))
@@ -319,7 +320,6 @@ class1_assignments <- left_join(
   mgrid %>% select(name, x, y)
 )
 ```
-
 
 ## Make Catalog with All Label Classes
 

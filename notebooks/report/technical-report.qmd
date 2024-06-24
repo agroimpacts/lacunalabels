@@ -190,7 +190,9 @@ In addition to the on-board quality metrics assessed, a parallel review process 
 ```{r}
 #| echo: false
 
-catalog <- readr::read_csv(here::here("data/interim/label_catalog_allclasses.csv"))
+catalog <- readr::read_csv(
+  here::here("data/interim/label_catalog_allclasses.csv")
+)
 ```
 
 ### Total assignments
