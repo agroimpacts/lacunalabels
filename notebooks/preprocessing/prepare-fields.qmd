@@ -1,0 +1,489 @@
+---
+title: "Prepare Fields for Chipping"
+editor: visual
+format: html
+engine: knitr
+execute:
+  echo: true
+  warning: false
+  message: false
+toc: true
+number-sections: true
+toc-depth: 6
+---
+
+```{r}
+#| echo: false
+#| message: false
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(lubridate)
+library(patchwork)
+```
+
+```{r}
+#| echo: false
+#| label: paths
+
+root_dir <- here::here("data/")
+raw_dir <- file.path(root_dir, "raw")
+inter_dir <- file.path(root_dir, "interim")
+fetch_dir <- "~/Dropbox/projects/activelearning/mappingafrica"
+```
+
+The digitized polygons from the main labeling platform, along with the remaining Class 1 labels drawn by experts but not used for Quality Control in the main platform, were combined to prepare for chipping. This step resulted in both a final geoparquet file with the field geometries, along with a near final label catalog containing all attributes.
+
+## Prepare Class 1 Labels
+
+### Process Type X polygons, combine with Q
+
+First assemble all the Class 1 labels, where were divided into pre-checked ones (800) that went into the labelling platform (Type "Q"), and the remainder that did not enter the platform (Type "X"). The latter first needed some additional cleaning and processing, including extraction from the original geojson and differentiation from Type Q.
+
+```{r}
+#| eval: false
+
+fs <- file.path(fetch_dir, "campaigns/data/labels/vectors/lacunafund/qc/")
+
+# get the site names selected from the full Class 1 labels
+assignments <- readr::read_csv(
+  file.path(inter_dir, "assignments_full_wtiles.csv")
+)
+qi_names <- assignments %>% 
+  filter(Type %in% c("I", "Q")) %>% 
+  select(name, Type) %>% arrange(Type)
+
+# Filter working QI by QI sites left in assignments
+load(here::here("data/interim/working_qi.rda"))
+working_qir <- working_qi %>% 
+  filter(name %in% unique(qi_names$name)) %>% 
+  mutate(Labeller = gsub("st(\\d)", "st_\\1", Labeller)) %>% 
+  arrange(Labeller)
+
+# first read in the files from experts who were reviewed, whose sites were added to the 
+# platform
+label_files <- dir(fs, pattern = "labels", recursive = TRUE)
+sample_files <- dir(fs, pattern = "sample", recursive = TRUE)
+
+# Accepted assignments - we have to go through each set of experts, because of overlaps in 
+# sites, to figure out whose sites were selected for Q sites, and to identify the remainder
+pats <- c("east_|west_2_1|qc_west_1.geojson$", 
+          "east_|west_2_1|^sample_qc_west_1.geojson$")
+lfiles <- file.path(fs, label_files[grep(pats[1], label_files)])
+sfiles <- file.path(fs, sample_files[grep(pats[2], sample_files)])
+qi_distinct <- paste0(working_qir$name, working_qir$Labeller)
+
+qi_labels1 <- lapply(unique(working_qir$Labeller), function(x) { # x <- "east_1"
+  # Labels 
+  lbls <- st_read(lfiles[grep(x, lfiles)]) %>%
+    as_tibble() %>%
+    group_by(name) %>%
+    mutate(nflds = n()) %>%
+    ungroup()
+  mxdate <- max(lbls$label_date) + seconds(1)
+  
+  # samples, to pick up non-field names
+  smpls <- st_read(sfiles[grep(x, sfiles)])
+  noflds <- smpls %>%
+    filter(!name %in% unique(lbls$name)) %>%
+    st_drop_geometry() %>%
+    select(name) %>%
+    mutate(nflds = 0) %>% 
+    mutate(
+      label_date = seq(mxdate, mxdate + seconds(n() - 1),
+                       by = "1 sec", tz = "UTC")
+    ) # add dummy completion time to no field samples to enable downsteam join
+  
+  bind_rows(lbls, noflds) %>%
+    st_as_sf() %>%
+    mutate(Labeller = x) %>% 
+    select(name, Labeller, label_date, nflds)
+}) %>% bind_rows() %>% 
+  mutate(Type = ifelse(paste0(name, Labeller) %in% qi_distinct, "QA", "QX"))
+
+# qi_labels1 %>% filter(Type == "QA") %>% 
+#   st_drop_geometry %>% 
+#   distinct(name, Labeller)
+
+# Assignments from experts not integrated in platform
+pats <- "west_2_2|west_2_3|west_2_4"
+lfiles <- file.path(fs, label_files[grep(pats, label_files)])
+sfiles <- file.path(fs, sample_files[grep(pats, sample_files)])
+
+qi_labels2 <- lapply(c("west_2_2", "west_2_3", "west_2_4"), function(x) { # x <- "east_1"
+  # Labels 
+  lbls <- st_read(lfiles[grep(x, lfiles)]) %>%
+    as_tibble() %>%
+    group_by(name) %>%
+    mutate(nflds = n()) %>%
+    ungroup()
+  mxdate <- max(lbls$label_date) + seconds(1)
+
+  # samples, to pick up non-field names
+  smpls <- st_read(sfiles[grep(x, sfiles)])
+  noflds <- smpls %>%
+    filter(!name %in% unique(lbls$name)) %>%
+    st_drop_geometry() %>%
+    select(name) %>%
+    mutate(nflds = 0) %>% 
+    mutate(
+      label_date = seq(mxdate, mxdate + seconds(n() - 1),
+                       by = "1 sec", tz = "UTC")
+    ) # add dummy completion time to no field samples to enable downsteam join
+
+  bind_rows(lbls, noflds) %>%
+    st_as_sf() %>%
+    mutate(Labeller = x) %>% 
+    select(name, Labeller, label_date, nflds)
+}) %>% bind_rows() %>% 
+  filter(!is.na(name)) %>%  
+  mutate(Type = "QX")
+
+# Combine
+class1_all <- bind_rows(qi_labels1, qi_labels2) %>% 
+  filter(!is.na(name)) %>% 
+  group_by(name, Labeller, Type) %>% 
+  mutate(completion_time = max(label_date)) %>% 
+  ungroup()
+# class1_all %>% filter(is.na(completion_time))
+# class1_all %>% arrange(name, Type) %>% View()
+# class1_all %>% arrange(completion_time) %>% select(name, Labeller, completion_time)
+
+# make a catalog, without geometries
+class1_cat <- class1_all %>% 
+  st_drop_geometry() %>% 
+  select(name, Labeller, Type, completion_time, nflds) %>% 
+  distinct()
+# class1_cat %>% filter(is.na(completion_time))
+  
+# Let's pull out and repair the polygons from QX and repair them
+sf_use_s2(FALSE)
+class1_xlabels <- class1_all %>% 
+  filter(Type == "QX" & nflds > 0) %>% 
+  st_make_valid()
+
+# separate valid from invalid polygons and repair
+valids <- class1_xlabels %>% 
+  filter(st_is_valid(.))
+
+# repair multipolygons, if any
+# class1_labels %>% filter(st_is(., "MULTIPOLYGON")) # none
+invalids <- class1_xlabels %>% 
+  filter(!st_is_valid(.)) %>% 
+  st_buffer(dist = 0)  # fix remaining invalid polygons with 0 width buffer
+invalids %>% st_is_valid()
+
+# recombine and create unique field identifiers per labellers
+valids <- bind_rows(valids, invalids) %>% 
+  filter(!is.na(name)) %>%   # drop fields without names
+  as_tibble() %>% 
+  group_by(name, Labeller) %>% 
+  mutate(fid = paste0(Labeller, "_", name, "_", 1:n())) %>% 
+  ungroup() %>% 
+  st_as_sf()
+  
+# and recast multipolygons to polygons
+multis <- valids %>% 
+  filter(st_is(., "MULTIPOLYGON")) %>% 
+  st_cast("POLYGON") %>% 
+  mutate(area = as.numeric(st_area(.))) %>% 
+  # filter(name == "BF0864707") %>% st_geometry %>% plot()
+  group_by(name, fid) %>% #count() %>% filter(n > 2)
+  filter(area == max(area)) %>% 
+  ungroup() 
+# multis %>% View()
+
+# valids %>%
+#   filter(!st_is(., "MULTIPOLYGON")) %>%
+#   filter(fid %in% multis$fid)
+
+# recombine
+bind_rows(
+  multis, 
+  valids %>% 
+    filter(!st_is(., "MULTIPOLYGON"))
+) %>% arrange(name) %>% 
+  select(name, Type, Labeller, completion_time) -> class1_xlabelsf
+# class1_xlabelsf %>% filter(is.na(completion_time))
+```
+
+### Assign Unique Identifiers
+
+Join those with the Class 1 fields that were on the platform (we prefer these to the raw polygons, as they were cleaned a bit more), making up an equivalent *assignment_id* value that can be used to distinguish platform-assigned *assignment_id*s, using unique Type, Expert, Name combinations to provide a numerical id, beginning with 100,001, to distinguish from the range used by the platform (1 to \<45000). The fields were also renumbered to have unique field identifiers (the *gid* field was renamed *fid*) beginning after the maximum *gid* in the labeller-collected fields. There were nearly 780,000 of those, so we began from 1,000,001 for Class 1 fields.
+
+```{r}
+#| eval: false
+
+# Class 1 sites used for Q assignments (pre-checked, loaded into platform)
+class1_qlabels <- sfarrow::st_read_parquet(
+  file.path(raw_dir, "qc_fields.parquet")
+) %>% st_set_crs(4326) %>% 
+  filter()
+
+# class1_qlabels %>% filter(name %in% bad_sites)
+# bad_sites
+# Combined Q and non-Q (X) fields to make full set of Class 1 labels
+class1_labels <- bind_rows(
+  left_join(
+    class1_qlabels %>% mutate(Type = "QA"), 
+    class1_cat %>% filter(Type == "QA")
+  ) %>% rename(geometry = geom_clean) %>% 
+    select(name, Type, Labeller, completion_time),
+  class1_xlabelsf %>% mutate(Type = "QX") #%>% filter(is.na(completion_time))
+) %>% filter(!is.na(completion_time))
+# class1_labels %>% filter(is.na(completion_time))
+# class1_labelsfix <- bind_rows(
+#   class1_labels %>% filter(st_is_valid(.) & st_is(., "POLYGON")),
+#   class1_labels %>% 
+#     filter(!st_is_valid(.) | !st_is(., "POLYGON")) %>% 
+#     st_make_valid(.) %>%
+#     filter(!st_is(., "POINT")) %>% 
+#     st_cast("POLYGON") 
+# ) %>% arrange(name, Type, Labeller)
+
+# make up artificial assignment ID for Class 1 labels
+# class1_cat %>% group_by(name) %>% count() %>% filter(n>1)
+# class1_labels %>% filter(is.na(completion_time))
+# class1_assignments %>% filter(is.na(completion_time))
+class1_assignments <- class1_cat %>% 
+  arrange(Type, Labeller, name) %>% 
+  mutate(assignment_id = 1:n() + 100000)
+# class1_assignments %>% filter(is.na(completion_time))
+
+# join assignments to class1_labels, make unique fid
+class1_labelsf <- left_join(class1_labels, class1_assignments) %>% 
+  mutate(fid = 1:n() + 1000000) %>% 
+  group_by(assignment_id) %>% 
+  ungroup() %>% 
+  st_transform(crs = "ESRI:102022") %>% 
+  mutate(farea = as.numeric(st_area(.) / 10000)) %>% 
+  st_transform(crs = 4326) %>% 
+  select(fid, name, Labeller, assignment_id, Type, completion_time, nflds, 
+         farea)
+# class1_labelsf %>% filter(is.na(assignment_id))
+
+class1_labelsf <- bind_rows(
+  class1_labelsf %>% filter(st_is_valid(.) & st_is(., "POLYGON")),
+  class1_labelsf %>% 
+    filter(!st_is_valid(.) | !st_is(., "POLYGON")) %>% 
+    st_make_valid(.) %>% #View()
+    filter(!st_is(., "POINT")) %>% 
+    st_cast("POLYGON") #%>% View()
+) %>% arrange(name, Type, Labeller)
+# class1_labelsf %>% filter(!st_is_valid(.))  # None
+# class1_labelsf %>% filter(!st_is(., "POLYGON")) # None
+
+class1_labelsf %>% 
+  st_drop_geometry() %>% 
+  group_by(assignment_id) %>% 
+  summarize(farea = mean(farea)) %>% 
+  left_join(class1_assignments, .) %>% 
+  mutate(farea = ifelse(is.na(farea), 0, farea)) %>% 
+  select(name, Labeller, Type, assignment_id, completion_time, nflds, 
+         farea) -> class1_assignments
+# class1_assignments %>% filter(is.na(assignment_id))
+# class1_assignments %>% filter(is.na(completion_time))
+```
+
+Recode the expert labeller IDs, and add preliminary quality scores from pre-review used to determine selected sites for Q assignment.
+
+```{r}
+#| eval: false
+
+class1_assignments <- class1_assignments %>% 
+  mutate(Labeller = case_when(
+    Labeller %in% c("west_1", "west_2_3", "west_2_4") ~ "west1", 
+    Labeller == "west_2_1" ~ "west2", 
+    Labeller == "west_2_2" ~ "west3", 
+    grepl("east", Labeller) ~ gsub("_", "", Labeller)
+  )) 
+
+load(here::here("data/interim/expert_rscores.rda"))
+expert_rscoresr <- expert_rscores %>% 
+  rename(Labeller = file) %>% 
+  mutate(Labeller = gsub("_working.csv", "", Labeller)) %>% 
+  mutate(Labeller = gsub("_2_1.csv", "2", Labeller)) %>% 
+  select(Labeller, Rscore)
+
+class1_assignments <- left_join(class1_assignments, expert_rscoresr)
+```
+
+### Pick up x,y coordinates
+
+```{r}
+#| eval: false
+mgrid <- readr::read_csv(file.path(raw_dir, "maingrid.csv"))
+class1_assignments <- left_join(
+  class1_assignments,
+  mgrid %>% select(name, x, y)
+)
+```
+
+## Make Catalog with All Label Classes
+
+With the Class 1 catalog prepared, a new complete catalog was made by combining the larger one containing the assignments from `labeller`, which included the chip names created during image chipping (see `chipping.ipynb`). This updated catalog now includes all non-field assignments. Classes were recoded as follows:
+
+-   Class 1a: Expert-labeled sites that were selected after inspection for Q sites in `labeller`.
+
+-   Class 1b: Expert-labeled sites that were not selected for `labeller`, either because of insufficient quality or because they were not reviewed prior to selection.
+
+-   Class 1c: Q type assignments completed by the labelling teams, which were assessed against Class 1a labels
+
+-   Class 1d: Sites corresponding to Class 1b labels that were digitized by one to three members of the labeling team
+
+-   Class 2: Ordinary assignments mapped by the labelling teams, with each site mapped by only one member, except in cases where an assignment was marked as Untrusted, in which case it would have been mapped multiple times until the first approved assignment was completed
+
+-   Class 4: Sites mapped by three separate labellers.
+
+```{r}
+#| eval: false
+catalog_int <- readr::read_csv(
+  here::here("data/interim/label_catalog_int.csv")
+)
+```
+
+```{r}
+#| eval: false
+
+load(here::here("data/interim/bad_sites.rda"))
+
+# check class1_labelsf not in catalog against bad_sites, pulled because of low image quality
+notins <- class1_labelsf %>%
+  filter(!name %in% catalog_int$name)
+# nrow(notins) == notins %>% filter(name %in% bad_sites) %>% nrow(.) # TRUE
+
+# combine to get the chip names
+class1_assignments <- inner_join(
+  class1_assignments, 
+  catalog_int %>% 
+    select(name, chip) %>% 
+    distinct() 
+)
+
+# class1_assignments %>% filter(nflds == 0)
+
+# Drop the non-assignments from the catalog first
+drop_from_cat <- catalog_int %>% 
+  filter(is.na(assignment_id))
+# drop_from_cat %>% distinct(Labeller)
+# class1_assignments %>% filter(name %in% drop_from_cat$name)  
+# most are in the Class 1 asn
+
+# Now combine
+catalog_allclasses <- bind_rows(
+  catalog_int %>% 
+    filter(!name %in% drop_from_cat$name) %>% 
+    mutate(Labeller = as.character(Labeller)),
+  class1_assignments
+) %>% rename(class = Class) %>% 
+  mutate(Class = case_when(
+    Type == "F" ~ "2",
+    Type == "QA" ~ "1a",
+    Type == "Q" ~ "1c",
+    Type == "QX" ~ "1b",
+    Type == "N" & class == "4" ~ "4",
+    Type == "N" & class == "4a" ~ "1d"
+  )
+) %>% mutate(status = ifelse(is.na(status), "None", status)) 
+
+catalog_allclasses %>%
+  group_by(Type, Class, class) %>% 
+  count()
+#   Type  Class class     n
+# 1 F     2     2     27951
+# 2 F     2     2a     4216
+# 3 N     1d    4a     2433
+# 4 N     4     4      3032
+# 5 Q     1c    1      2598
+# 6 QA    1a    NA      797
+# 7 QX    1b    NA     1376
+
+# catalog_allclasses %>% distinct(Labeller) %>% View()
+catalog_allclasses %>% 
+  # add fix in here for NA fareas from mislabel in analyze_assignments.qmd, 
+  # carried through some NAs to label_catalog_int.csv, which is not convenient 
+  # to redo - adding here for all assignment statuses
+  mutate(farea = ifelse(is.na(farea), 0, farea)) %>% 
+  mutate(nflds = ifelse(is.na(nflds), 0, nflds)) %>% 
+  mutate(nflds = ifelse(nflds > 0 & farea == 0, 0, nflds)) %>% 
+  select(name, Class, assignment_id, Labeller, completion_time, label_time, 
+         status:Rscore, x, y, farea, nflds, tile, image_date, chip) %>% 
+  readr::write_csv(here::here("data/interim/label_catalog_allclasses.csv"))
+
+# catalog_allclasses <- readr::read_csv(
+#   here::here("data/interim/label_catalog_allclasses.csv")
+# )
+# catalog_allclasses %>%
+#   # mutate(farea = ifelse(status == "Approved" & is.na(farea), 0, farea)) %>%
+#   filter(status == "Approved" & is.na(farea)) %>%
+#   select(farea, nflds)
+
+# catalog_allclasses %>%
+#   mutate(cls = ifelse(grepl("1", Class), 1, Class)) %>% 
+#   distinct(name, cls) %>%
+#   group_by(cls) %>%
+#   count()
+
+# catalog_allclasses %>%
+#   group_by(Class) %>%
+#   summarize(ct = length(which(is.na(Rscore))))
+
+# catalog_allclasses %>% 
+#   group_by(Class) %>% 
+#   distinct(name) %>% count()
+# catalog_allclasses %>% 
+#   filter(Class != "1c" & status != "Untrusted") %>%
+#   distinct(Class, name) %>%
+#   group_by(name) %>%
+#   mutate(ct = n()) %>% filter(ct > 1) %>%
+#   arrange(name)
+# catalog_allclasses %>% filter(is.na(assignment_id))
+# catalog_allclasses %>% filter(nflds > 0 & farea == 0)
+# catalog_allclasses %>% filter(is.na(completion_time))
+```
+
+## Label Geometries
+
+A separate geoparquet containing the polygons for all label classes for each assignment with digitized field was written.
+
+```{r}
+#| eval: false
+
+flds <- sfarrow::st_read_parquet(
+  file.path(raw_dir, "mapped_fields.parquet")
+) %>% select(-geom) %>%
+  st_set_crs(4326)
+
+# fix geometries
+flds_fix <- bind_rows(
+  flds %>% filter(st_is(., "POLYGON")),
+  flds %>% 
+    filter(!st_is(., "POLYGON")) %>%
+    st_buffer(dist = 0) %>% 
+    filter(!st_is_empty(.)) %>% 
+    st_cast("POLYGON")
+)
+# flds_fix %>% filter(!st_is(., "POLYGON")) # none
+# flds_fix %>% filter(!st_is_valid(.)) # none
+
+bind_rows(
+  flds_fix %>% #slice(1:1000) %>% 
+    rename(fid = gid, geometry = geom_clean) %>% 
+    mutate(name = gsub("_.*", "", name)) %>% 
+    select(-categ_comment) %>% 
+    select(fid, name, assignment_id, completion_time, category),
+  class1_labelsf %>% #filter(is.na(assignment_id))
+    mutate(category = "annualcropland") %>% 
+    select(fid, name, assignment_id, completion_time, category)
+) %>% arrange(assignment_id) -> flds_all
+# flds_all %>% filter(!st_is_valid(.)) # None
+# flds_all %>% filter(!st_is(., "POLYGON")) # None
+# class1_labelsf %>% filter(!st_is_valid(.)) 
+# class1_labelsf %>% filter(!st_is(., "POLYGON")) 
+
+sfarrow::st_write_parquet(
+  obj = flds_all, dsn = here::here("data/processed/mapped_fields_final.parquet")
+)
+```
