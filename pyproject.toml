@@ -1,0 +1,25 @@
+[project]
+name = "makelabels"
+version = "0.0.1"
+authors = [
+  { name="Lyndon Estes", email="lestes@clarku.edu" },
+]
+description = "Making image chips and labels from field boundary data"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache-2.0 License",
+    "Operating System :: OS Independent",
+]
+
+[build-system]
+requires = ["setuptools >= 61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tools.setuptools.packages.find]
+where = ['src']
+
+[project.urls]
+Homepage = "https://github.com/agroimpacts/lacunalabels"
+Issues = "https://github.com/agroimpacts/lacunalabels/issues"
