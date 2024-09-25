@@ -14,7 +14,7 @@ and led by [Farmerline](https://farmerline.co/), in collaboration with
 University](https://www.clarku.edu/departments/geography/).
 
 Please refer to the [technical
-report](notebooks/report/technical-report.pdf) for more details on the
+report](docs/report/technical-report.pdf) for more details on the
 methods used to develop the dataset, an analysis of label quality, and
 usage guidelines. The report and additional documents, analyses, and
 demonstration code used to develop labels by cloning the repository:
