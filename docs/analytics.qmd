@@ -1,0 +1,589 @@
+---
+title: "Label analysis"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(dplyr)
+library(stats)
+library(sf)
+library(parallel)
+library(gstat)
+library(tidyterra)
+library(terra)
+library(ggplot2)
+library(ggpubr)
+library(patchwork)
+
+```
+
+
+## Catalogs
+
+Read in label catalogs and fields and calculate area per field
+
+```{r, eval=FALSE}
+#| eval: false
+catalog <- readr::read_csv(
+  here::here("data/interim/label_catalog_allclasses.csv")
+)
+catalog %>% distinct(name) %>% count()
+```
+
+
+```{r, eval=FALSE}
+best_cat <- readr::read_csv(
+  here::here("data/processed/label-catalog-filtered.csv")
+) %>% #select(-1) %>% 
+  filter(nflds > 0)
+flds <- sfarrow::st_read_parquet("data/processed/mapped_fields_final.parquet")
+
+w <- 0.005 / 2
+fld_areas <- mclapply(best_cat$assignment_id, function(x) { # x <- 2398
+  assn <- best_cat %>% filter(assignment_id == !!x) %>% 
+    st_as_sf(coords = c("x", "y"), crs = 4326)
+  xy <- unname(st_coordinates(assn)[1, ])
+  m <- matrix(c(xy[1] - w, xy[2] + w, xy[1] + w, xy[2] - w), 2, 2, 
+              byrow = TRUE, dimnames = list(NULL, c("x", "y")))
+  polybox <- st_as_sf(data.frame(m), coords = c("x", "y"), crs = 4326) %>%
+    st_bbox %>% st_as_sfc
+  # plot(polybox)
+  # plot(fld_area$geometry, add = TRUE, col = "red")
+  fld_area <- flds %>% 
+    filter(assignment_id == !!x) %>% 
+    st_make_valid() %>% #st_geometry() %>% plot(add = TRUE)
+    slice(unlist(st_contains_properly(polybox, .))) %>% 
+    # slice(st_nearest_feature(assn, .)) %>% 
+    st_transform(crs = "ESRI:102022") %>%
+    mutate(farea =  as.numeric(st_area(.) / 10000)) %>% 
+    st_transform(4326)
+  fld_area
+  # assn %>% mutate(farea2 = median(fld_area))
+}, mc.cores = 30) %>% 
+  bind_rows() %>% 
+  select(-completion_time)
+```
+
+## Country data
+Pick up country codes from map, and combine countries with the map
+```{r, eval=FALSE}
+africa <- st_read("data/external/africa.geojson")
+drop_countries <- c("CPV", "MDG", "MYT", "STP", "SHN", "REU", "SYC", "MUS")
+iso2 <- geodata::country_codes() %>% 
+  filter(continent == "Africa" & 
+           SOVEREIGN != "France" & !ISO3 %in% drop_countries) %>% 
+  select(NAME, ISO2, ISO3)
+
+assns <- best_cat %>%  
+    st_as_sf(coords = c("x", "y"), crs = 4326)
+
+assns_africa <- st_intersection(assns, africa) %>% 
+  rename(ISO3 = GID_0) %>% 
+  mutate(year = as.integer(substr(image, 11, 14))) %>% 
+  left_join(., iso2 %>% select(ISO2, ISO3)) %>%
+  select(name, assignment_id, ISO2, ISO3, NAME_0, year, nflds) %>% 
+  rename(country = NAME_0, #cntry2 = cntry, 
+         cntry = ISO2)
+
+# combine with field areas
+fld_areas <- st_drop_geometry(assns_africa) %>% 
+  select(assignment_id, cntry, year) %>% 
+  left_join(fld_areas, .)
+
+st_drop_geometry(assns_africa) %>% 
+  group_by(ISO3) %>% 
+  count() %>% 
+  ungroup() %>% 
+  left_join(africa, ., by = c("GID_0" = "ISO3")) %>% 
+  filter(n >= 30) -> krig_cntries
+```
+
+Map of assignments
+```{r, eval=FALSE}
+assn_count <- catalog %>% 
+  group_by(name, x, y) %>% 
+  summarize(ct = n(), x = mean(x), y = mean(y)) %>% 
+  ungroup()
+
+bb <- st_bbox(st_as_sf(assn_count, coords = c("x", "y")))
+p <- ggplot(africa) + geom_sf(fill = "grey80") + 
+  assn_count %>% #filter(ct == 1) %>% 
+  st_as_sf(coords = c("x", "y"), crs = 4326) %>% 
+  geom_sf(data = ., pch = "+", size = 0.5, color = "blue") + 
+  coord_sf(xlim = bb[c(1, 3)], ylim = bb[c(2, 4)]) + 
+  theme_linedraw()
+
+xrat <- diff(bb[c(1, 3)]) / diff(bb[c(2, 4)])
+d <- 5
+ggsave(p, 
+       filename = here::here("docs/manuscript/images/assn-map.png"), 
+       height = d, width = (d * xrat), 
+       units = "in", dpi = 300)
+```
+
+## Label risk
+A measure of uncertainty for sites mapped 3 or more times
+
+```{r, eval=FALSE}
+# assns_full <- readr::read_csv(
+#   here::here("data/interim/label_catalog_allclasses.csv")
+# )
+# flds <- sfarrow::st_read_parquet("data/processed/mapped_fields_final.parquet")
+
+# assns_full %>% filter(Class == "1a") %>% select(-label_time)
+# excludes Class 1a
+multi_sites <- catalog %>% 
+  filter(status %in% c("Approved", "Rejected")) %>% 
+  # filter(Class == "4") %>% 
+  group_by(name) %>% 
+  count() %>% 
+  ungroup() %>% 
+  filter(n > 2) %>% 
+  arrange(-n) %>% 
+  ungroup()
+
+grid_poly <- function(xy, w = 0.005 / 2) {
+  st_as_sfc(
+    st_bbox(
+      st_as_sf(
+        data.frame(x = c(xy$x - w, xy$x + w), y = c(xy$y + w, xy$y - w)), 
+        coords = c("x", "y"), 
+        crs = 4326
+      )
+    )
+  )
+}
+
+bayes_polys <- function(assn_ids, flds, assns_full, grid_poly) {
+
+  bayes_polys <- lapply(assn_ids, function(x) {  # x <- 18
+    assn <- assns_full %>% filter(assignment_id == !!x)
+    # print(assn$Labeller)
+    
+    # get score records for labeller
+    scores <- assns_full %>% 
+      filter(Labeller == assn$Labeller) %>% 
+      select(Score, FieldSkill, NoFieldSkill) %>%
+      summarize_all(list(~mean(., na.rm = TRUE)))
+    
+    polys <- flds %>% 
+      filter(assignment_id == !!x) %>% 
+      st_make_valid() #%>%
+      # st_buffer(dist = 0)
+
+    if(nrow(polys) > 0) {
+      polys <- suppressMessages(st_intersection(st_union(polys), grid_poly))
+    } else {
+      polys <- st_polygon()
+      # break
+    }
+    
+    bayes_poly <- st_sf(
+      'posterior_field' = 1,
+      'max_field_lklh' = scores$FieldSkill,
+      'max_nofield_lklh' = scores$NoFieldSkill,
+      'prior'= scores$Score,
+      geometry = st_sfc(polys, crs = 4326)
+    )
+    bayes_poly
+  }) %>% bind_rows()
+  return(bayes_polys)
+}
+
+bayes_averaging <- function(bayespolys, rtemp) { 
+  # rtemp <- r
+  # bayespolys <- bpols
+  posterior_acc <- NULL
+  weight_acc <- NULL
+  for(i in 1:nrow(bayespolys)) {  # i <- 1
+    # empty geometry means that user label all map extent as no field, 
+    # posterior.field.rst = '0'
+    if(!is.na(bayespolys$prior[i])) { # don't process if no prior
+      if(st_is_empty(bayespolys[i, "geometry"])) {
+        posterior_val <- rep(0, ncol(rtemp) * nrow(rtemp))
+        r <- setValues(rtemp, posterior_val)
+        
+        # maximum likelihood matrix would be a matrix with a single value
+        max_nofield_lklh_val <- rep(bayespolys[i, ]$max_nofield_lklh, 
+                                    ncol(rtemp) * nrow(rtemp))
+        user_max_lklh <- setValues(rtemp, max_nofield_lklh_val)
+        
+      } else {
+        # polygon: 1 
+        # bkgd: 0
+        r <- rasterize(bayespolys[i, ], rtemp, 
+                       field = "posterior_field", background = 0)
+        user_max_lklh <- rasterize(
+          bayespolys[i, ], rtemp, 
+          field = "max_field_lklh", 
+          background = bayespolys[i, ]$max_nofield_lklh
+        )
+      }
+      
+      weight <- user_max_lklh * bayespolys[i,]$prior
+      if(is.null(posterior_acc)) {
+        weight_acc <- weight 
+        posterior_acc <- r * weight
+      } else {
+        if(bayespolys[i, ]$posterior_field == 1) {
+          weight_acc <- weight_acc + weight 
+        }
+        posterior_acc <- posterior_acc + r * weight 
+      }
+    } 
+  }
+
+  heat_map <- posterior_acc / weight_acc
+  names(heat_map) <- "heat"
+  rcl <- rbind(c(-Inf, 0.50000001, 0), c(0.50000001, Inf, 1))
+  label_map <- classify(heat_map, rcl)
+  names(label_map) <- "labels"
+  risk_map <- lapp(c(heat_map, label_map),  
+                   fun = function(r1, r2) r1 * (1 - r2) + (1 - r1) * r2)
+  names(risk_map) <- "risk"
+
+  return(c(heat_map, label_map, risk_map))
+}
+
+# run Bayes averaging  
+sf_use_s2(FALSE)
+bmapsl <- mclapply(multi_sites$name, function(x) { # x <- multi_sites$name[1]
+  print(x)
+  tst_sites <- catalog %>% filter(name == !!x)
+  
+  # grid polygon
+  gpol <- tst_sites %>% 
+    select(name, x, y) %>% 
+    slice(1) %>% 
+    grid_poly(.)
+  
+  # get Bayes polys and run averaging
+  bpols <- bayes_polys(tst_sites$assignment_id, flds, catalog, gpol)
+  r <- rast(ext(st_as_sf(gpol)), res = 0.005 / 224)
+  bmaps <- bayes_averaging(bpols, r)
+  
+  return(wrap(bmaps))
+}, mc.cores = 30)
+
+bmapsl <- lapply(bmapsl, unwrap)
+```
+
+```{r, eval=FALSE}
+# 684, 1249, 1769, 516, 1062
+i <- sample(1:length(bmapsl), size = 1)
+print(i)
+plot(bmapsl[[i]])
+catalog %>% 
+  filter(name == multi_sites$name[i]) %>% 
+  select(nflds)
+```
+
+### Calculate and plot label risk
+```{r, eval=FALSE}
+f <- function(r1, r2) r1 * (1 - r2) + (1 - r1) * r2
+# f(0.499, 0)
+
+risk_stats <- mclapply(bmapsl, function(x) {
+  mu_risk <- global(x[[3]], mean)
+  pct_risky <- global(x[[3]] > 0.34 * 1, sum) / ncell(x[[3]])
+  cbind(mu_risk, pct_risky)
+}, mc.cores = 30)
+
+# bind_rows(risk_stats)
+risk_stats_df <- do.call(rbind, risk_stats) %>% 
+  as_tibble() %>% 
+  mutate(name = multi_sites$name) %>% 
+  select(name, mean, sum)
+  
+risk_stats_sf <- catalog %>% 
+  select(name, x, y) %>% 
+  distinct() %>% 
+  left_join(risk_stats_df, .) %>% 
+  rename(fraction = sum) %>% 
+  st_as_sf(coords = c("x", "y"), crs = 4326)
+
+# Target raster
+r <- rast(ext(krig_cntries), res = 0.5)
+r[] <- 1
+ktarget <- mask(r, krig_cntries)
+riskr <- trim(rasterize(risk_stats_sf %>% select(-name), 
+                        field = c("mean", "fraction"),
+                        ktarget, fun = mean, na.rm = TRUE))
+names(riskr) <- c("A", "B")
+
+# hist(riskr)
+brks <- list(seq(0, 0.4, 0.1), seq(0, 1, 0.2))
+bb <- st_bbox(riskr)
+
+thm <- theme(
+  strip.background = element_rect(fill = "transparent", color = "black"), 
+  strip.text = element_text(color = "black", hjust = 0, size = 10), 
+  legend.position = c(0.1, 0.3),
+  legend.background = element_rect(color = "black", linewidth = 0.05),
+  legend.key.height= unit(0.5, 'cm'),
+  legend.key.width= unit(0.5, 'cm'),
+  legend.title.position = "top"
+)
+
+p1 <- lapply(1:2, function(x) {
+  p <- ggplot(africa) + geom_sf(fill = "grey80") + 
+  geom_spatraster(data = riskr[[x]]) + 
+  scale_fill_binned(breaks = brks[[x]],
+                    type = "viridis",
+                    na.value = "transparent",
+                    limits = c(0, max(brks[[x]])),
+                    guide = guide_colorsteps(title = NULL)) +
+  coord_sf(xlim = bb[c(1, 3)], ylim = bb[c(2, 4)]) + 
+  theme_linedraw() + facet_grid(. ~ LETTERS[x]) + thm
+  p
+})
+
+pnl <-  theme(
+  strip.background = element_rect(fill = "transparent", color = "black"), 
+  strip.text = element_text(color = "black", hjust = 0, size = 10)
+)
+vals <- c("mean", "sum")
+lbs <- c("Mean risk", "Proportion risky")
+x <- 2
+p2 <- lapply(1:2, function(x) {
+  risk_stats_df %>% 
+    ggplot() + 
+    geom_histogram(aes(x = get(vals[x])), 
+                   breaks = seq(0, 1, 0.05),
+                   color = "grey", fill = "blue") +
+    scale_y_continuous(breaks = seq(0, 600, 50), limits = c(0, 600), 
+                       expand = c(0, 0)) +
+    scale_x_continuous(expand = c(0, 0)) + 
+    ylab("N sites") + 
+    xlab(lbs[x]) + 
+    theme_linedraw() + 
+    facet_grid(. ~ LETTERS[x + 2]) + 
+    pnl
+})  
+
+op <- p1[[1]] + p1[[2]] + p2[[1]] +
+  p2[[2]] + 
+  theme(axis.text.y = element_blank(), axis.title.y = element_blank()) + 
+  plot_layout(ncol = 2, heights = c(2, 1.9))
+  # plot_layout(design = lo)
+ggsave(here::here("docs/manuscript/images/label-risk.png"), 
+       height = 7, width = 7 * 7 / 6, 
+       units = "in", dpi = 300)
+
+save(risk_stats_df, 
+     file = here::here("docs/manuscript/data/risk_stats_df.rda"))
+```
+
+## Cropland characteristics
+
+### Field size by country by year
+
+For appendix. This assessment should be done using a reliable field mapping model that can be used to evaluate changes in the same locations. 
+```{r, eval=FALSE}
+fld_areas_sum <- fld_areas %>% 
+  st_drop_geometry() %>% 
+  group_by(cntry, year) %>%
+  summarize(farea = median(farea), ct = n()) %>%
+  ungroup() %>% #View()
+  group_by(cntry) %>%
+  filter(!any(ct < 30)) %>%
+  ungroup()
+```
+
+Examine by country for trends in field areas, using Theil-Sen regression and Kendall's Tau to evaluate the slope. 
+
+```{r, eval=FALSE}
+sen <- function(..., weights = NULL) {
+  mblm::mblm(...)
+}
+
+fld_areas_sum %>% 
+  filter(cntry == "TZ") %>% 
+  mblm::mblm(farea ~ year, data = .) %>% summary(.)
+p <- ggplot(fld_areas_sum, aes(x = year, y = farea)) + 
+  geom_point() +
+  geom_smooth(method = sen) + 
+  facet_wrap(~cntry, ncol = 5, scales = "free_y") + 
+  # stat_regline_equation(label.y = max(farea), aes(label = ..eq.label..)) +
+  stat_cor(method = "kendall", cor.coef.name = "tau") + 
+  ylab("Field size (ha)") + xlab("") + 
+  theme_linedraw() + 
+  theme(strip.background = element_rect(fill = "transparent"),
+        strip.text = element_text(color = "black", hjust = 0))
+ggsave(
+  p, 
+  filename = here::here("docs/manuscript/images/fsize-by-country-year.png"),
+  height = 10, width = 10, units = "in", dpi = 300
+)
+```
+
+### Field sizes and density by country
+
+```{r, eval=FALSE}
+# pick up nflds from assns_africa, dropping non-field sites
+med_nflds <- assns_africa %>% 
+  st_drop_geometry %>% 
+  filter(assignment_id %in% fld_areas$assignment_id) %>% 
+  group_by(cntry) %>% 
+  summarize(mednflds = median(nflds), munflds = mean(nflds), ct = n())
+  
+med_fsize <- fld_areas %>%   ## Redo this
+  st_drop_geometry %>%
+  group_by(cntry) %>%
+  summarize(farea = median(farea), ctf = n()) %>% 
+  left_join(., med_nflds) %>% 
+  left_join(., iso2 %>% select(NAME, ISO2), by = c("cntry" = "ISO2")) %>% 
+  rename(country = NAME) %>% 
+  mutate(country = case_when(
+    grepl("Demo", country) ~ "D.R. Congo",
+    grepl("Central", country) ~ "Cen. African Rep.", 
+    TRUE ~ country
+  ))
+
+med_sz_dens <- med_fsize %>%
+  filter(ct >= 30)        
+print(med_sz_dens, n = 40)
+
+p <- ggplot(med_sz_dens) + 
+  geom_bar(aes(x = reorder(cntry, farea), y = farea), stat = "identity") +
+  ylab("Field size (ha)") + xlab("") + 
+  scale_x_discrete(expand = c(0, 0)) + 
+  scale_y_continuous(expand = c(0, 0), 
+                     limits = c(0, max(med_sz_dens$farea) * 1.05)) +
+  theme_linedraw() + facet_grid(. ~ "A") + pnl + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) 
+
+p2 <- ggplot(med_sz_dens) + 
+  geom_bar(aes(x = reorder(cntry, mednflds), y = mednflds), 
+           stat = "identity") +
+  ylab("N fields per site") + xlab("") + 
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0), 
+                     limits = c(0, max(med_sz_dens$mednflds) * 1.05)) +
+  theme_linedraw() + facet_grid(. ~ "B") + pnl + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) 
+
+p3 <- ggplot(med_sz_dens) + 
+  geom_point(aes(x = farea, y = mednflds), size = 0.75, color = "red") +
+  ggrepel::geom_text_repel(aes(x = farea, y = mednflds, label = cntry), 
+                           point.padding = 0.05,max.overlaps = 20,
+                           min.segment.length = 0.1) + 
+  xlab("Field size (ha)") + ylab("N fields per site") + 
+  scale_x_continuous(limits = c(0.2, 0.8)) + 
+  theme_linedraw() + facet_grid(. ~ "C") + pnl
+
+# c(rep(1, nrow(med_sz_dens) / 2), rep(5.5, nrow(med_sz_dens) / 2))
+p4 <- med_sz_dens %>% 
+  mutate(xs1 = c(rep(1, n() / 2), rep(5.5, n() / 2)), 
+         xs2 = c(rep(2, n() / 2), rep(6.5, n() / 2)), 
+         ys = c(rev(seq(1, ceiling(n() / 2), by = 1)), 
+                rev(seq(1, ceiling(n() / 2), by = 1)))) %>%
+  # print(n = 40)
+  ggplot() + 
+  geom_text(aes(x = xs1, y = ys, label = cntry, hjust = 0)) + 
+  geom_text(aes(x = xs2, y = ys, label = country, hjust = 0)) + 
+  scale_x_continuous(limits = c(0, 10)) + 
+  theme_void()
+
+op <- (p + p2) / (p3 + p4) 
+ggsave(
+  op, filename = here::here("docs/manuscript/images/fsize-ct-by-country.png"),
+  height = 8, width = 9.5, units = "in", dpi = 300
+)
+```
+
+## Plot gridded medians and density
+
+Where there are at least 30 samples per grid cell
+```{r}
+fld_areas_ctr <- st_centroid(fld_areas)
+fld_dens_ctr <- assns_africa %>% 
+    filter(assignment_id %in% fld_areas$assignment_id)
+
+scales <- c(0.5, 1)
+fareasl <- lapply(scales, function(x) {
+  r <- rast(ext(krig_cntries), #crs = "ESRI:102022", 
+            res = x)
+  r[] <- 1
+  ktarget <- mask(r, krig_cntries)
+  farear <- rasterize(fld_areas_ctr, ktarget, field = "farea", fun = median)
+  fdensr <- rasterize(fld_dens_ctr, ktarget, field = "nflds", fun = median)
+  rmask1 <- rasterize(fld_dens_ctr, ktarget, fun = "count")
+  trim(mask(c(farear, fdensr), rmask1 >= 10 * 1, maskvalue = 0))
+})
+plot(fareasl[[2]])
+
+i <- 2
+brks <- c(0.1, 0.25, 0.5, 0.75, 1, 1.7)
+brks2 <- c(6, 10, 20, 30, 40, 50)
+farea_cls <- classify(
+  fareasl[[i]][[1]], cbind(brks[-length(brks)], brks[-1], 1:(length(brks) - 1)),
+  include.lowest = TRUE
+)
+fdens_cls <- classify(
+  fareasl[[i]][[2]], 
+  cbind(brks2[-length(brks2)], brks2[-1], 1:(length(brks2) - 1)), 
+  include.lowest = TRUE
+)
+brkslabs <- c(
+  paste0(
+    sprintf("%0.2f", brks[1:(length(brks) - 1)]), 
+    "-", 
+    sprintf("%0.2f", brks[-1])
+  ), ""
+)
+brkslabs2 <- c(
+  paste0(
+    sprintf("%2i", as.integer(brks2[1:(length(brks2) - 1)])), 
+    "-", 
+    sprintf("%2i", as.integer(brks2[-1]))
+  ), ""
+)
+
+bb <- st_bbox(fareasl[[i]])
+# cols <- viridisLite::rocket(4)
+cols <- viridisLite::viridis(length(brks) - 1)#[c(1, 7, 14, 20)]
+p <- ggplot(africa) + geom_sf(fill = "grey70") + 
+  geom_spatraster(data = as.factor(farea_cls)) + 
+  geom_sf(data = africa, fill = "transparent", col = "grey90") + 
+  scale_fill_manual(values = cols,
+                    labels = brkslabs,
+                    guide = guide_legend(position = "inside", title = "ha",
+                                         reverse = TRUE),
+                    na.translate = FALSE) +
+  coord_sf(xlim = bb[c(1, 3)], ylim = bb[c(2, 4)]) + 
+  theme_linedraw() + 
+  theme(legend.position.inside = c(0.12, 0.2), 
+        legend.background = element_rect(color = "black", linewidth = 0.05)) +
+        # legend.background = element_rect(fill = "grey90")) + 
+  facet_grid(. ~ "A") + pnl
+p
+
+cols <- viridisLite::viridis(length(brks2) - 1)#[c(1, 7, 14, 20)]
+p2 <- ggplot(africa) + geom_sf(fill = "grey70") + 
+  geom_spatraster(data = as.factor(fdens_cls)) + 
+  geom_sf(data = africa, fill = "transparent", col = "grey90") + 
+  scale_fill_manual(values = cols,
+                    labels = brkslabs2,
+                    guide = guide_legend(position = "inside", title = "N",
+                                         reverse = TRUE),
+                    na.translate = FALSE) +
+  coord_sf(xlim = bb[c(1, 3)], ylim = bb[c(2, 4)]) + 
+  theme_linedraw() + 
+  theme(legend.position.inside = c(0.12, 0.2), 
+        # legend.background = element_rect(fill = "grey90")) + 
+        legend.background = element_rect(color = "black", linewidth = 0.05)) +
+  facet_grid(. ~ "B") + pnl
+p2
+
+op <- p + p2
+xrat <- diff(bb[c(1, 3)]) / diff(bb[c(2, 4)])
+d <- 5
+ggsave(op, 
+       filename = here::here("docs/manuscript/images/field-size-dens-map.png"), 
+       height = d, width = (d * xrat) * 2, 
+       units = "in", dpi = 300)
+```
+

@@ -1,0 +1,419 @@
+---
+title: "A region-wide, multi-year set of crop field boundary labels for Africa"
+author: 
+  - name: Estes, L.D. 
+    email: lestes@clarku.edu
+    affiliations:
+      - id: a
+        name: Clark University
+        department: Graduate School of Geography
+        city: Worcester, MA
+        post-code: 01610
+        country: USA
+        attributes:
+          corresponding: true
+    #   - ref: cu
+  - name: Wussah, A.
+    affiliations:
+      # - ref: fl
+      - id: b
+        name: Farmerline Ltd
+        city: Kumasi
+        country: Ghana
+  - name: Asipunu, M.
+    affiliations:
+      # - ref: fl
+      - ref: b
+  - name: Gathigi, M.
+    affiliations:
+      - id: c
+        name: Spatial Collective
+        city: Nairobi
+        country: Kenya
+      # - ref: sc
+  - name: Kovačič, P.
+    affiliations:
+      # - ref: sc
+      - ref: c
+  - name: Muhando, J.
+    affiliations:
+      - ref: c
+  - name: Yeboah, B.V.
+    affiliations:
+      - ref: b
+  - name: Addai, F.K.
+    affiliations:
+      - ref: b
+  - name: Akakpo, E.S.
+    affiliations:
+      - ref: b
+  - name: Allotey, M.K.
+    affiliations:
+      - ref: b
+  - name: Amkoya, P.
+    affiliations:
+      - ref: c
+  - name: Amponsem, E.
+    affiliations:
+      - ref: b
+  - name: Donkoh, K.D. 
+    affiliations:
+      - ref: b
+  - name: Ha, N.
+    affiliations:
+      - ref: a
+  - name: Heltzel, E.
+    affiliations:
+      - ref: a
+  - name: Juma, C.
+    affiliations:
+      - ref: c
+  - name: Mdawida, R.
+    affiliations:
+      - ref: c
+  - name: Miroyo, A.
+    affiliations:
+      - ref: c
+  - name: Mucha, J.
+    affiliations:
+      - ref: c
+  - name: Mugami, J.
+    affiliations:
+      - ref: c
+  - name: Mwawaza, F.
+    affiliations:
+      - ref: c
+  - name: Nyarko, D.A.
+    affiliations:
+      - ref: b
+  - name: Oduor, P.
+    affiliations:
+      - ref: c
+  - name: Ohemeng, K.N.
+    affiliations:
+      - ref: b
+  - name: Segbefia, S.I.D.
+    affiliations:
+      - ref: b
+  - name: Tumbula, T.
+    affiliations:
+      - ref: c
+  - name: Wambua, F. 
+    affiliations:
+      - ref: c
+  - name: Xeflide, G.H.
+    affiliations:
+      - ref: b
+  - name: Ye, S.
+    affiliations:
+      - id: d
+        name: Zhejiang University
+        department: Institute of Agricultural Remote Sensing and Information Technology, College of Environmental and Resource Sciences
+        city: Hangzhou
+        country: China
+  - name: Yeboah, F.
+    affiliations:
+      - ref: b
+format:
+  tandf-pdf:
+    keep-tex: true  
+engine: knitr
+execute:
+  echo: false
+  warning: false
+  message: false
+number-sections: true
+keep-tex: true
+csl: ecology.csl
+bibliography: references.bib
+abstract: |
+  African agriculture is undergoing rapid transformation. Annual maps of crop fields are key to understanding the nature of this transformation, but such maps are currently lacking and must be developed using advanced machine learning models trained on high resolution remote sensing imagery. To enable the development of such models, we delineated field boundaries in 33,746 Planet images captured between 2017 and 2023 across the continent using a custom labeling platform with built-in procedures for assessing and mitigating label error. We collected 42,403 labels, including 7,204 labels arising from tasks dedicated to assessing label quality (Class 1 labels), 32,167 from sites mapped once by a single labeller (Class 2) and 3,032 labels from sites where 3 or more labellers were tasked to map the same location (Class 4). Class 1 labels were used to calculate labeller-specific quality scores, while Class 1 and 4 sites mapped by at least 3 labellers were used to further evaluate label uncertainty using a Bayesian risk metric. Quality metrics showed that label quality was moderately high (0.75) for measures of total field extent, but low regarding the number of individual fields delineated (0.33), and the position of field edges (0.05). These values are expected when delineating small-scale fields in 3-5 m resolution imagery, which can be too coarse to reliably distinguish smaller fields, particularly in dense croplands, and therefore requires substantial labeller judgement. Nevertheless, previous work shows that such labels can train effective field mapping models. Furthermore, this large, probabilistic sample on its own provides valuable insight into regional agricultural characteristics, highlighting variations in the median field size and density. The imagery and vectorized labels along with quality information is available for download from two public repositories.   
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+#| echo: false
+
+library(dplyr)
+library(ggplot2)
+```
+
+# Introduction
+
+Africa's agricultural systems are undergoing a large-scale transformation in response to rapid economic and population growth, increasing urbanization, climatic change, and other factors [@brückner2012; @henderson2017; @searchinger2015; @bullock2021]. These changes include accelerating cropland expansion [@potapovGlobalMapsCropland2022], an increase in medium-scale farms [@sitkoAnatomyMediumscaleFarm2015], and expanding tree crops [@fagan2022; @kimambo2020]. Understanding the nature and scale of these changes is important for answering a number of sustainability-related questions, such as the impact to ecological and climate systems [@davis2023; @davis2020; @searchinger2015]. Among several key datasets needed for tracking agricultural changes are field boundary (i.e. parcel) maps, which provide the foundations for characterizing agricultural systems [@estesHighResolutionAnnual2022; @wang2022; @FritzMappingglobalcropland2015]. As one of many examples, data on field sizes can enable farm service providers to offer seed and fertilizer in appropriate bundle sizes [e.g. @wussahFinalReportPhase2022]. Field boundary maps help to constrain downstream models for estimating crop types and yields [e.g. @EstesComparingmechanisticempirical2013], which are used by service providers to assess the effectiveness of their recommendations, and by government agencies to estimate crop supply relative to demand in order to address food shortages [@FourieBetterCropEstimates2009]. Field boundary maps therefore provide a key ingredient for understanding many aspects of agricultural systems.
+
+Field boundary maps are largely unavailable for most African countries because of the logistical challenge and expense of collecting such data in the field [@estesHighResolutionAnnual2022]. The only practical tool for creating field boundary maps is satellite remote sensing, but the small sizes and dynamic nature of smallholder fields makes them hard to map accurately [@estesHighResolutionAnnual2022; @wang2022; @rufin2024]. New high resolution satellites combined with deep learning make it increasingly feasible to precisely map individual fields [@nakalembe2023], which has been demonstrated by recent studies using very high resolution commercial imagery [e.g. @rufin2024], as well as Planet's new field boundary dataset[^1]. While promising, these data require a subscription, therefore many non-commercial users it will be necessary to develop their own models and maps. Developing deep learning mapping models requires large, geographically representative samples of labelled images [@burkeUsingSatelliteImagery2021]. For field boundary mapping, models perform best when trained to separately distinguish between field perimeters and field interiors [@wang2022, @waldnerDeepLearningEdge2020]. To train models to make these distinctions accurately, it is necessary to carefully and precisely digitize the boundaries of individual fields (rather than grouping several fields into a single polygon), so that these can be converted into rasterized labels showing field boundaries, field interiors, and non-field areas [@fig-label].
+
+[^1]: <https://www.planet.com/pulse/planets-newest-planetary-variable-automated-field-boundaries/>
+
+![A Planet image (top) with a corresponding image label with three classes distinguishing the non-field background (black), field interior (grey), and field edge (white).](images/label-example.png){#fig-label}
+
+These model requirements expose a problem of label availability. Until recently, there were no publicly available field boundary labels that cover large, geographically diverse regions. This shortage was partially addressed by the recent release of the Fields of the World [@kerner2024] and GloCab [@hall2024] datasets, which both provide labels for individual fields and corresponding Sentinel-2 imagery over a number of countries. These two datasets will greatly enhance efforts to train field boundary mapping models, but between them provide data for only three African countries (Kenya, South Africa, and Rwanda in the Fields of the World). Other relevant label sets exist that could be combined with these to improve coverage of Africa, such as one developed for Ghana [@estesHighResolutionAnnual2022], However, such data tend to represent just one time point, making them less useful for developing multi-year maps, given Africa’s rapid agricultural changes and differences that arise from environmental variation between different years, which combine to limit model transferability [@khallaghi2024].
+
+Field boundary labels that represent the continent's agricultural systems over multiple years are therefore needed to enable the development of models that can effectively map changes in Africa's smallholder-dominated cropping systems. Given the cost and logistical difficulty of ground data collection, the only practical solution is to label directly on satellite imagery [e.g. @estesHighResolutionAnnual2022; @rufin2024], which poses its own set of challenges. First, image-interpreted labels can have substantial interpretation errors [@estesHighResolutionAnnual2022]. Second, high-resolution imagery (\<5 m) is essential for labelling, but is either expensive or hard to acquire for a uniform time period [@lesiv2018], and temporal discrepancies between the labelled images and those used for inference can results in map error [@elmesAccountingTrainingData2020].
+
+To address the need for a comprehensive set of field boundary labels, we collected a sample of more than 32,000 images throughout Africa's croplands, spanning the years 2017-2023, and delineated the annual crop fields visible within the imagery. We used Planet basemap mosaics that are publicly available through Norway’s International Climate and Forests Initiative [@nicfi2024]. Using these images has two major advantages: 1) they provide cloud-free, spatially complete coverage at monthly (from 2020) to 6-monthly (2017-2020) intervals; 2) their 4.8 m resolution is sharp enough for humans to recognize a large proportion of smallholder fields. Although \<2 m imagery (very high resolution, or VHR) is needed to most accurately distinguish smallholder fields [@wang2022], there are no freely available sources of VHR images that have the same temporal resolution as the Planet archive, which provides spatially complete coverage for distinct seasons in specific years, a crucial characteristic for tracking changing agricultural dynamics. To address the challenge of labeling in the coarser Planet imagery, we used a custom labelling platform designed for Planet data with built-in procedures for assessing and mitigating label error [@Estesplatformcrowdsourcingcreation2016; @estesHighResolutionAnnual2022].
+
+The resulting labelled images provides a dataset that will facilitate the training and validation of field boundary mapping models, while providing useful insight into regional variations in the characteristics of African croplands.
+
+# Methods
+
+## Sample selection
+
+We collected a sample of imagery from likely cropland areas identified using an existing moderate resolution cropland data layer developed by the University of Maryland [@potapovGlobalMapsCropland2022], focusing on continental Africa south of the Sahara where annual rainfall is above 150 mm, down to 30$\circ$ latitude crossing the Northern Karoo in South Africa, the southern extent of NICFI image availability. To create the label set, we drew a random sample of \>37,000 cells from an existing \~500 m (0.005$^\circ$) sampling grid [@estesHighResolutionAnnual2022], which was stratified into 9 different agro-ecoregions (ranging from Arid to Humid, as defined by the United Nations Food and Agricultural Organization). We sampled cells that had at least 50% cropland cover, to ensure that most labels had a mixture of cropland and non-cropland and to minimize the number of purely negative (non-cropland) labels generated. The resulting cells consituted a sample of unique mapping sites that was selected to be representative of the region's croplands.
+
+## Image processing
+
+The selected samples cells were randomly assigned to one of the 6 years in the initially determined study timeframe (2017-2022), with the sample subsequently adjusted to include 2023. In each year, imagery from the least cloudy month for the given location was selected. We determined cloudiness by calculating the monthly frequency of bad quality MODIS pixels for the year 2022 within the Google Earth Engine platform [@gorelickGoogleEarthEngine2017]. We then used a set of python routines[^2] to query the Planet API for each location and its corresponding date in the sample. The Planet NICFI quads intersecting a larger 0.0592$^\circ$ tile that each sample cell was located in was downloaded, cropped, reprojected to geographic coordinates, and resampled to a 0.000025$^\circ$ resolution (approximately 3 m), which enabled better visual identification of field boundaries. Within each tile, we normalized each band within its 1st and 99th percentile ranges, which further improved image contrast and the ability to distinguish fields. The normalized images were converted to Cloud-Optimized Geotiffs, and uploaded to SentinelHub[^3] using the Bring Your Own Cog (BYOC) service, where they were accessed by the labelling platform using the Web Map Service (WMS) protocol.
+
+[^2]: <https://github.com/agroimpacts/maputil/blob/main/maputil/planet_downloader.py>
+
+[^3]: <https://www.sentinel-hub.com/>
+
+## Label collection
+
+The sample of sites was randomly separated into the following categories:
+
+-   Class 1: Sites labelled by experts that were used for quality control (Q) in the labelling platform (n=2000);
+-   Class 2: Sites to be mapped one time by one individual labeller (n=31,000);
+-   Class 4: Individual samples sites mapped one time each by three different labeller (n=1,000).
+
+Initially, a Class 3 sample, which represented locations with up to 6 years of imagery to be labelled, were selected, but these were determined to be impractical to label, given the substantial variability in image interpretation. Class 3 locations where therefore re-allocated to Class 2 to boost that sample size.
+
+The basic labelling task across both methods entailed mapping fields visible in the processed Planet imagery within the target box, which is the boundary of a cell selected from the 0.005$^\circ$ sample grid [@fig-labeller]. The objective was to delineate boundaries of recently active fields that appeared to be under annual cultivation (i.e. planted to field crops) within the cell, while fields that were determined to be inactive, abandoned, or fallow were not labelled.
+
+![A view of the labelling platform's interface, showing the target box and a true color rendering of the Planet imagery to label at that location. Labellers were shown a larger image extent in order to give additional context. The imagery was also rendered in false color rendering to aid interpretation, along with several virtual globe basemaps to provide higher resolution views.](images/labeller-interface.png){#fig-labeller fig-align="center"}
+
+Labels were collected using two methods. The primary method was through a custom cloud-hosted labelling platform designed specifically for field boundary delineation on Planet imagery [see @estesHighResolutionAnnual2022; @Estesplatformcrowdsourcingcreation2016]. This platform was not immediately accessible, as it had to be redesigned to work with SentinelHub's WMS services (it previously used Element84's rasterfoundry[^4] service). While this capability was being established, a team of expert labellers (experienced spatial analysts) collected the Class 1 samples using QGIS. Class 1 labels were collected by a team of 5 individual experts using QGIS. A subset of their samples were reviewed and graded for quality by a separate set of geospatial analysts at Clark University, and 797 were selected to load into the labelling platform prior to the collection of Class 2 and 4 sites. The final selected Class 1 labels were used as quality control (Q) assignments, slipped surreptiously into each labeller's workflow, in order to measure differences between the two sets of collected labels.
+
+[^4]: <https://www.element84.com/software-engineering/raster-foundry-geospatial-analysis-scale/>
+
+## Label quality
+
+The labelling task was inherently difficult, as the nature of smallholder-dominated croplands together with the resolution of the imagery, which combine to make discerning field boundaries difficult under certain conditions, can often lead to situations where there are multiple reasonable interpretations as to what constitutes a field. We therefore used several different methods to assess and control label quality.
+
+### Training
+
+The labelling teams were hired following an initial selection process in which their ability to map a small number of sites provided in a QGIS project was assessed. After hiring and before commencing ordinary mapping assignments, labellers were provided with an inital round of training by the management teams, and were required to pass a 10-site qualification test provided on the labelling platform, in which each person's maps were assessed against known boundaries using quality control routines described in the next section.
+
+### On platform quality control
+
+During labelling, each team member's work was periodically assessed against Class 1 labels at sites that were automatically assigned by the platform's assignment scheduling routine. The scheduler randomly assigned different labelling tasks to individual labellers according to a frequency parameter assigned to each label class. Quality control tasks (Q assignments) were initially served to labellers at a rate of 1 in 10 assignments, dropping to 2 in 100 assignments towards the end of the labelling period. Q assignments were assessed against Class 1 labels using a multi-dimensional metric [@fig-qmetrics]. For this project, 4 metrics were applied in the overall Qscore calculated after each Q assignment was completed, which was calculated as follows:
+
+$$
+\mathrm{Qscore = 0.55Area + 0.225N + 0.1Edge + 0.125Categorical}
+$$ {#eq-score}
+
+Here Area measures the degree of overlap in the extents digitized by the labeller and the expert (Class 1 polygons), and is calculated as the sum of areas of agreement for field (positive agreement) and non-field (negative agreement) areas divided by the total area of the labelling target (which sums positive and negative agreement and positive and negative disagreement). N represents the agreement in the number of fields digitized by the labeller and the expert (Class 1), while Edge is a measure of how close the boundaries of the labeller's polygons were to those of the Class 1 label, and Categorical is the agreement between the class value assigned by the labeller and the expert.
+
+![The 4 dimensions used to assess label quality relative to Category 1 reference polygons. A = Correctly labelled areas inside the target cell; B = Fragmentation accuracy, or the agreement between the number of fields mapped by the reference (Class 1) label and the labeller; C = Edge accuracy; D = Categorical accuracy.](images/fig3.png){#fig-qmetrics}
+
+### Label reviews
+
+```{r}
+#| echo: false
+#| message: false
+#| results: hold
+
+catalog <- readr::read_csv(
+  here::here("data/interim/label_catalog_allclasses.csv")
+)
+
+nr <- catalog %>% 
+  filter(!is.na(rscore)) %>% 
+  nrow(.)
+
+npass <- catalog %>% 
+  filter(!is.na(rscore2) & rscore2 == 1) %>%
+  distinct(assignment_id) %>% 
+  nrow(.)
+
+nhighpass <- catalog %>% 
+  filter(!is.na(rscore) & rscore > 2) %>%
+  distinct(assignment_id) %>% 
+  nrow(.)
+```
+
+In addition to the on-board quality metrics assessed, a parallel review process was undertaken by the project supervisory team. Two supervisors conducted independent reviews of `r nr` randomly selected assignments using a standalone Jupyter Lab environment[^5], which provided a rendering of the imagery and digitized labels for each selected site. Each site was given a score of 0-4, with 0-3 indicating increasing levels of accuracy in assignments where fields were present in the imagery, and 4 indicating sites that were correctly labelled as having no fields present. A simplified binary version of this metric was also calculated, in which ratings of 0-1 were grouped as failing, and 2-4 as passing.
+
+[^5]: <https://github.com/agroimpacts/labelreview/blob/main/review_labellers.ipynb>
+
+To evaluate the consistency of expert ratings, we conducted an initial assessment of between-expert agreement, in which the two supervisors' ratings were compared for an overlapping set of 190 assignments. The two experts agreed 46.8% of the time along the 5 category rating system, and 74% of the time on the simplified binary metric. The overall mean rating difference for the 4-class metric was 0.12 (expert 2 minus expert 1 rating), indicating no appreciable rating bias between experts.
+
+### Label risk
+
+Additional insights into label quality can also be obtained by assessing the differences between labels at sites mapped by multiple labellers, which provides a measure of label uncertainty. There are multiple ways to estimate label uncertainty, ranging from simple rasterized heat maps to more complex, probabilistic measures that factor in label quality. Here we illustrate label uncertainty using a Bayesian risk measure previously applied in @estesHighResolutionAnnual2022, which is estimated by first calculating a rasterized consensus label:
+
+$$
+C = P(\theta|D) = \sum_{i=1}^{n}P(L_i|D)P(\theta|D,L_i)
+$$ {#eq-consensus}\
+
+Here *C*, consensus, is the probability (*P*) that the true value ($\theta$) of each pixel (field or not field) corresponds to the most frequently labelled value (*D*, field or not field) assigned by the labellers (*L*) who annotated the particular site. That likelihood is the sum of the two multiplied probabilities on the right hand side of @eq-consensus, which were calculated for each labeller *i*. $P(\theta|D,L_i)$ is the labeller's label for a given pixel. $P(L_i|D)$ is the prior probability that the labeller was correct when delineating labels for a specific class. It was calculated for each labeller by multiplying their average Qscore (@eq-score) by their average Producer's accuracy for the selected class [see @estesHighResolutionAnnual2022 for full details]. This formula ensures that greater weight is given to labels produced by labellers who were more likely to be correct. Once *C* was estimated, the consensus label $\hat{D}$ was assigned as 0 (non-field) if $C<0.5$, otherwise 1 (field). Bayesian risk *r* was then calculated as:
+
+$$
+r = C(1-\hat{D}) + (1-C)\hat{D}
+$$ {#eq-risk}
+
+The maximum value of risk for either value of $\hat{D}$ is 0.5 for any given pixel, from which two site-wide measures of risk were assessed: 1) the average risk; 2) the proportion of pixels exceeding a specified risk threshold. We calculated consensus and risk from sites rasterized to 224x224 pixels, and used a risk threshold of 0.34 to calculate the proportion of "risky" pixels in each consensus label.
+
+```{r}
+#| echo: false
+#| eval: false
+
+r <- seq(0, 1, 0.05)
+l <- c(rep(0, 10), rep(1, 11))
+# m <- cbind(r, l)
+f <- function(r, l) r * (1 - l) + (1 - r) * l
+
+# plot(r, f(r, l))
+```
+
+## Cropland characteristics
+
+In addition to training models, these labels can also be used to provide insights into the characteristics of croplands across the African continent region, such as regional variation in the sizes and numbers of fields. We demonstrate this by analyzing these properties at two scales. The first was a country scale assessment, in which we calculated the median size and site-level number of fields for each country having at least 30 labelled sites. We also examined annual trends in field size for countries that had at least 30 sampled sites in each of the seven years. In the second analysis, we calculated and mapped the median field size and numbers within all 1° grid cells across the sampled region that contained at least 10 digitized sites. To calculate field size and numbers, we first filtered the full set of assignments by selecting the highest quality assignment for each multi-assignment site, selecting only those sites that had at least 1 field digitized. To estimate field size, we extracted the polygons that were contained entirely within the 0.005° target polygon, in order to avoid biases caused by the truncation of fields overlapping the boundary, transformed the polygons into an Albers Equal Area Conic projection, and then calculated the area in hectares for each polygon. For field number, we counted the total polygons for each site. At each scale of analysis, we used the median rather than the mean to avoid the influence of outliers, which could arise from either digitization error or the chance that the sample of sites was biased towards one side of the size class/number distribution. To evaluate annual country-level trends in median field size, we used the R package `mblm` [@komsta2019] to apply Siegel's repeated median regression [@siegel1982], a modified version of Theil-Sen regression [@sen1968a; @theil1950], which is robust to outliers. We used the Kendall test to assess the association between year and field size [@hollander1973a; @sen1968a].
+
+# Results
+
+## Total assignments
+
+The main labelling tasks (Classes 2 and 4) were undertaken between November, 2023 and completed in mid-March, 2024. A total of `r nrow(catalog)` assignments from `r length(unique(catalog$name))` unique sites [@fig-assnmap] were completed, broken down into the classes detailed in @tbl-assns. Class 1 assignments were divided into 4 sub-categories (Classes 1a-1d). Class 1a were a subset of labels that were assessed to be of passing quality by an initial independent review. These were used to provide the reference labels used for assessing Q assignments on the platform. Class 1b comprised the remaining Class 1 assignments completed by the expert teams. Class 1c were the total number of Q assignments completed by the main labelling teams, i.e. those scored against the Class 1a labels. Finally Class 1d assignments arose from the Class 1b sites that were re-mapped by 1-3 members of the primary labelling teams, to provide additional assignments for comparison with the Class 1b labels, and for assessing label risk along with the Class 4 labels. A total of 825,395 polygons were digitized across the various labelling assignments.
+
+![The locations of the 33,746 sites that were labelled, indicated by blue crosses.](images/assn-map.png){#fig-assnmap}
+
+```{r}
+#| echo: false
+#| label: tbl-assns
+#| tbl-cap: "Number of assignments mapped per Class."
+
+catalog %>% 
+  group_by(Class) %>% 
+  count() %>% 
+  knitr::kable()
+
+```
+
+Alongside information on the label class, several additional variables were collected for each labelling assignment (see @tbl-catalog in the Appendix), such as the time spent collecting the label, a set of quality metrics, and the number of digitized fields.
+
+```{r}
+#| echo: false
+catsum <- catalog %>% 
+  summarize(across(c(Score, N, Edge, Area, rscore2), 
+                   ~mean(.x, na.rm = TRUE))) %>% 
+  rename(Rscore = rscore2, Qscore = Score)
+```
+
+## Label quality and risk
+
+The overall quality of the labels was assessed using @eq-score and the label reviews, and summarized in @tbl-scores. Summary scores include the overall mean Qscore, its three main components N, Edge, Area, as well as Rscore, the mean of the binary expert review scores, which represents the proportion of passing assignments (`r round(catsum$Rscore, 2)`) out of the `r npass` reviewed assignments. Of these, `r nhighpass` were given the highest ratings (3-4) according to the 4-class review score. Of the four measures calculated from the quality control algorithm [@eq-score], the average of the overall Qscore and Area were highest (`r round(catsum$Qscore, 2)` and `r round(catsum$Area, 2)`, respectively), while Edge was the lowest and N the second lowest.
+
+```{r}
+#| label: tbl-scores
+#| tbl-cap: "The average scores for the various quality metrics assessed during the project.  Qscore is the weighted mean of N, Edge, and Area, which were calculated using the platform's quality control algorithm, while Rscore is the overall proportion of expert-reviewed assignments assessed as passing." 
+
+catsum %>% 
+  knitr::kable(digits = 2)
+
+# catalog %>% distinct(Labeller, Rscore) %>% View()
+```
+
+```{r}
+#| echo: false
+load(here::here("docs/manuscript/data/risk_stats_df.rda"))
+# risk_stats_df
+qtiles <- quantile(risk_stats_df$mean, probs = seq(0, 1, 0.05)) %>% 
+    round(., 2) %>% unname(.)
+qtiles2 <- quantile(risk_stats_df$sum, probs = seq(0, 1, 0.05)) %>% 
+    round(., 2) %>% unname(.)
+
+# risk_stats_df %>% filter(sum <= 0.05) %>% nrow(.)
+```
+
+The average site-level label risk across the `r nrow(risk_stats_df)` that were mapped by 3 or more labellers was `r round(mean(risk_stats_df$mean), 3)`, with the distributions of risk illustrated in @fig-risk. To visualize the risk metrics across the region, we average both mean label risk and the proportion of risk labels within a 0.5° grid (@fig-risk A,B), which reveals a higher occurrence of risky labels along the entire sub-Sahelian region (from Ethiopia to the northwestern coast). Overall the mean risk for half of the labels was less than `r qtiles[11]` and less than `r qtiles[20]` for 95% of labels (@fig-risk C). Beyond this, half of sites had $\leq$ `r qtiles2[11]*100`% of their areas covered by risky pixels (risk\>0.34), while 90% had less than `r qtiles2[19]*100`% risk pixels (@fig-risk D).
+
+![Label risk, a measure of label uncertainty for sites mapped by three or more labellers. Panels A and C show the mean risk per pixel, mapped into 0.5° pixels and shown as a histogram, while panels B and D relate to the proportions of each site covered by risky pixels (r\>0.34).](images/label-risk.png){#fig-risk fig-align="center"}
+
+## Cropland characteristics
+
+The analysis of median field size and count at the country scale shows that the largest fields are in South Africa, Gambia, Sudan, and Botswana, and the smallest are in Rwanda, Burundi, the Democratic Republic of Congo, and Ethiopia [@fig-fsizect A]. The median number of fields per site in each country is highest in Burundi, Malawi, Uganda, and Ethiopia, and lowest in Botswana, Namibia, Namibia, and South Africa (@fig-fsizect B). In general, there is an inverse relationship between field size and number (@fig-fsizect C), with some notable exceptions, such as in the Democratic Republic of Congo, where the median field size and number are both small.
+
+![The country-scale median field size (A) and number of fields per sample site (B), as well as a scatter-plot of the relationship between the two measures (C).](images/fsize-ct-by-country.png){#fig-fsizect}
+
+The assessment of trend in field sizes showed slopes that were both positive and negative (@fig-sizebyyear). However, the only significant relationships (p \< 0.05) were the positive associations between year and field size in Tanzania and Chad, indicating a potential increases in field size between 2017-2023.
+
+The gridded assessment provides a spatial view of field size and count across the region (@fig-sizedensmap) that reinforces the general patterns revealed in the country-scale assessment (e.g. larger field sizes and smaller field counts in both South Africa and Sudan), while providing additional insight into how fields vary within countries. For example, fields in Botswana are confined to a small number of cells near the country's southern and eastern boundaries (@fig-sizedensmap A). Field sizes appear to be larger in the east and smaller in the west of Tanzania, while the opposite patterns are evident in Zimbabwe and Ghana. Ethiopia has uniformly small field sizes (nearly all cells have median sizes \<0.5 ha), while field counts (@fig-sizedensmap B) are generally high but vary from 6-10 fields per site to 40-50 per site, which are the highest mapped field counts across the entire region.
+
+![Maps of median size (A) and number (B) for each 1 degree cell having more than 10 sampled sites per cell.](images/field-size-dens-map.png){#fig-sizedensmap}
+
+# Discussion
+
+This dataset provides an extensive sample of field boundaries collected from the years 2017-2023 at `r length(unique(catalog$name))` unique sites across Africa, from south of the Sahara to the northern Karoo Desert (30° S). The labels are provided along with the high resolution Planet image chips on which they were digitized, and a set of quality metrics that can be used to understand and control for the effects of label error. In addition to these metrics, additional insight into label uncertainty (e.g. risk, @fig-risk) can be derived from the subset of sites that were mapped by multiple labellers.
+
+## Potential uses
+
+These labels can be used to train and assess a variety of machine learning models intended to map agricultural systems. The dataset was collected for the primary purpose of developing boundary-aware semantic segmentation models, with the ultimate goal of extracting field instances [e.g. @wang2022; @lu2024; @rufin2024]. An example of such an application is in @khallaghi2024, who converted field polygons collected on Planet imagery into the same 3-class labels as those illustrated in @fig-label, and used them to train a modified U-Net [@ronneberger2015a] to classify field interiors, field edges, and non-field areas. Similarly, these data could be adapted to train a multi-task learner, such as the ResUNet-a developed by @waldnerDeepLearningEdge2020 and @diakogiannis2020 , which was simultaneously trained to predict field extent, field edge, the distance from inside a field to its nearest edge, and to reconstruct the original input image. The labels could also provide a basis for transferring such models pre-trained on the substantially larger, but slightly coarsely resolved (10 m) Fields of the World dataset [@kerner2024], which may also enable higher edge-delineation performance.
+
+Beyond those particular applications, these data could also be converted to crop/non-crop labels for training binary semantic segmentation models, or could provide point samples for developing models that do not require spatial context [e.g. @xiong2017]. The quality measures may also be used to understand and control for the effects of label error on model performance. Lower quality labels can be used strictly for training neural networks, which have some robustness to label error, while the highest quality labels could be divided into subsets used for model fine-tuning and final validation [@burkeUsingSatelliteImagery2021]. To more explicitly test the sensitivity of models to training errors [@elmesAccountingTrainingData2020], low and high quality subsets could be created to train separate models that are then assessed against a common high quality subset [e.g. @estesHighResolutionAnnual2022]. The metrics could also be incorporated directly into model loss functions that apply variable weighting based on quality [e.g. @song2023].
+
+Besides modeling applications, the labels on their own provide information on the characteristics of croplands across the majority of Africa's arable agricultural regions. This includes insight into regional variations in field size, which updates the African portion of the field size estimates developed by @lesiv2019, along with additional information on field density. Other potential applications include estimating farm size from field size [e.g. @jänicke2024], which may help to identify changes in farm ownership and management patterns, such as the growth of medium-scale farming enterprises driven by urban middle-class investors, which has been identified in earlier studies based on household survey data [@sitkoAnatomyMediumscaleFarm2015; @sitko2014; @jayne2016]. For example, the temporal analysis presented here here suggests a trend towards increasing field sizes in Tanzania [@fig-sizebyyear], which could represent a continuation of the growth in medium size farms observed between 2008-2012 [@jayne2016]. Additional information would be needed to verify this possibility, given the spatio-temporal disconnect in the labels and their relatively brief, seven-year record, but the patterns suggested by this dataset may help target follow-up work.
+
+## Limitations
+
+This dataset has several limitations that can affect its usefulness for modeling applications, as well as its ability to represent agricultural characteristics. The first of these is the inherent problem of labelling error, which is influenced by a variety of factors, such as the frequency and precision of noding [e.g. @gong1995] and interpretation differences, which can vary substantially between observers [@mcroberts2018; @foody2024]. All of these factors, but especially the latter, affect the quality of these labels to varying degrees, as indicated by the accompanying quality metrics. A major reason for interpretation error relates to the original 4.88 m effective resolution of the Planet imagery. Although we resampled these imagery to \<3 m, which helped to slightly improve the edge visibility, the resolution is still too coarse to effectively distinguish the smallest fields, particularly in high density croplands, which is reflected by the low values of the field count and edge accuracy metrics (@tbl-scores). To most effectively reduce such interpretation error, field boundaries should be delineated on images that have \<2 m resolution [@wang2022]. This limitation means that the quality and representativeness of these data are biased towards larger size classes. Field delineation models trained using these data should not be expected to achieve high performance for fields \<1 ha [@wang2022].
+
+A second major limitation of this dataset is the separation of its temporal and spatial domains, which makes it harder to assess the consistency of model performance across years. We did not collect repeated labels at the same sites because the combined interpretation and digitization error would likely confound multi-year model assessments, and because our primary goal was to broaden the geographic scope of the sample. We increased the temporal variability of our sample by randomizing the year of imagery to be labelled, which should improve the temporal consistency of models trained with these data. This consistency can be further enhanced by model-specific techniques such as dropout regularization or photometric augmentation [e.g. @yaras2021; @khallaghi2024]. However, to fully assess the temporal consistency of any model, a separate set of site-specific, multi-year reference labels should be developed.
+
+# Data availability {.unnumbered}
+
+The vectorized labels and image chips for this dataset are publicly available on the Registry of Open Data on Amazon Web Services[^6] and on Zenodo[^7]. These links and the code used to process and analyze these data, along with the source files for this manuscript, are available on GitHub[^8]. The label data and associated images may be used in accordance with Planet’s participant license agreement for the NICFI contract[^9].
+
+[^6]: <https://registry.opendata.aws/africa-field-boundary-labels/>
+
+[^7]: <https://zenodo.org/records/11060871>
+
+[^8]: <https://github.com/agroimpacts/lacunalabels>
+
+[^9]: <https://assets.planet.com/docs/Planet_ParticipantLicenseAgreement_NICFI.pdf>
+
+# Acknowledgements {.unnumbered}
+
+The primary funding to support this research was provided by the Lacuna Fund, with additional support provided by the National Science Foundation (Awards #1924309 and #2439879). Support to develop the labelling platform was provided by Omidyar Network's Property Rights Initiative, now PLACE. We gratefully acknowledge credits provided by the European Space Agency (ESA) and SentinelHub for use of the service, through support provided by the ESA Network of Resources Initiative.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::
+
+# Appendix {.unnumbered}
+
+| Variable | Description |
+|-------------------------|-----------------------------------------------|
+| name | Unique site ID, prefixed with two character ISO country code |
+| Class | Label class (1a-1d, 2, 4) |
+| assignment_id | Identifier for each unique mapping assignment (1 mapping by 1 labeller) |
+| Labeller | Anonymous identifiers for each labeller |
+| completion_time | Date and time the labelling assignment was completed |
+| label_time | Total time spent on the assignment |
+| status | A system assigned value, including "Rejected" (failed Q assignment), "Untrusted" (assignment completed during time when labeller had low rolling average Q score); "Approved" assignment passing the Q threshold, or non-Q assignment passed when labeller's average Q score was above the quality threshold |
+| Score | Weighted mean Quality score, comprised of N, Edge, Area, and Categorical metrics derived from the Class 1a labels. |
+| N | Agreement between number of fields mapped by a labeller and the corresponding Class 1a labels |
+| Edge | Nearness of labeller's field boundaries to those in a corresponding Class 1a label set |
+| Area | Agreement between a labeller's mapped area of fields and non-fields and those of the corresponding Class 1a labels |
+| FieldSkill, NoFieldSkill | A Bayesian metric of a labeller's skill in mapping field and non-field areas, respectively [see @estesHighResolutionAnnual2022] |
+| Categorical | Agreement in the label assigned to each polygon delineated by the labeller and those in the Class 1a labels. |
+| rscore | A 1-4 ranking assigned to a given assignment by a supervising expert during independent review. Note: decimal values appear for cases where the same assignment was assessed more than once by experts |
+| rscore2 | A simplified binary version of `rscore`, where 0 indicates failing and 1 indicates passing. |
+| Qscore | Each labeller's overall average Score, assigned as a general confidence measure applied to all Class 2 and 4 assignments undertaken by the labeller |
+| QN | Each labeller's overall average N score, to provide a general measure of each labeller's tendency to over or under-segment fields (lower score typically mean under-segmentation). |
+| Rscore | Each labeller's overall average rscore2, assigned as a second generalized measure of confidence. Experts (except one) were assigned the same measure, based on initial reviews conducted by a separate team at Clark |
+| x, y | The centroid of each site, in decimal degrees |
+| farea | The average area (in ha) of fields digitized in each assignment |
+| nflds | The average number of fields digitized in each assignment |
+| tile | The unique identifier of the 0.05° image tile containing the labelling site |
+| image_date | The collection date of the image being labelled. The month and day represent the central date of images from August, 2020 and earlier, which were drawn from 6-month composites, while later images were collected in the month indicated, with the 15th being the central date for the month |
+| chip | The chip identifier (a concatenation of name and image-date) |
+| label | (In the demonstration catalog only). The identifier of rasterized label chip, concatenating the name, image-date, and assignment_id. |
+
+: The names and descriptions of variables provided in the label catalog. {#tbl-catalog}
+
+![The median field size by year for each country having at least 30 labelled sample per year. The slope of the Siegel regression and confidence interval is shown for each series, along with Kendall's Tau coefficient and the p-value from its significance test.](images/fsize-by-country-year.png){#fig-sizebyyear}
