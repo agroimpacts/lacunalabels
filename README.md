@@ -14,7 +14,7 @@ and led by [Farmerline](https://farmerline.co/), in collaboration with
 University](https://www.clarku.edu/departments/geography/).
 
 Please refer to the [technical
-report](docs/report/technical-report.pdf) for more details on the
+report](notebooks/report/technical-report.pdf) for more details on the
 methods used to develop the dataset, an analysis of label quality, and
 usage guidelines. The report and additional documents, analyses, and
 demonstration code used to develop labels by cloning the repository:
@@ -49,13 +49,13 @@ The data are in the bucket `s3://africa-field-boundary-labels` in the
 <col style="width: 94%" />
 </colgroup>
 <thead>
-<tr class="header">
+<tr>
 <th>Prefix/key</th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>imagery/</td>
 <td><p>Contains 4 band Planet image chips in geotiff format, named as
 follows:</p>
@@ -63,7 +63,7 @@ follows:</p>
 <p>Representing a grid identifier and the image acquisition date and
 month</p></td>
 </tr>
-<tr class="even">
+<tr>
 <td>labels/</td>
 <td><p>A set of 3-class labels in geotiff format, named as:</p>
 <p>XX1234567890_123456_YYYY-MM.tif</p>
@@ -74,12 +74,12 @@ labelling assignments, which were created using <a
 href="https://github.com/agroimpacts/lacunalabels/blob/devel/notebooks/image-processing/label-chips.ipynb">the
 demonstration notebook</a> provided in this repository.</p></td>
 </tr>
-<tr class="odd">
+<tr>
 <td>label-catalog-filtered.csv</td>
 <td>Details of each labeling assignment for the subset developed using
 the demonstration notebook, including information on label quality.</td>
 </tr>
-<tr class="even">
+<tr>
 <td>mapped_fields_final.parquet</td>
 <td>The original digitized field boundaries collected on the Planet
 imagery, in geoparquet format. These can be used together with the image
@@ -121,12 +121,10 @@ The image chips and geoparquet file can de downloaded directly from the
 
 Please cite the dataset as follows:
 
-Wussah, A., Asipunu, M., Gathigi, M., Kovačič, P., Muhando, J., Addai,
-F., Akakpo, E.S., Allotey, M., Amkoya, P., Amponsem, E., Dadon, K.D.,
-Gyan, V., Harrison X.G., Heltzel, E., Juma, C., Mdawida, R., Miroyo, A.,
-Mucha, J., Mugami, J., Mwawaza, F., Nyarko, D., Oduor, P., Ohemeng, K.,
-Segbefia, S.I.D., Tumbula, T., Wambua, F., Yeboah, F., Estes, L.D.,
-2024. A region-wide, multi-year set of crop field boundary labels for
-Africa. Dataset on Zenodo. DOI 10.5281/zenodo.11060870.
-
-![](notebooks/report/images/fig-fldareamap-1.png)
+Estes, L. D., Wussah, A., Asipunu, M., Gathigi, M., Kovačič, P.,
+Muhando, J., Yeboah, B. V., Addai, F. K., Akakpo, E. S., Allotey, M. K.,
+Amkoya, P., Amponsem, E., Donkoh, K. D., Ha, N., Heltzel, E., Juma, C.,
+Mdawida, R., Miroyo, A., Mucha, J., Mugami, J., Mwawaza, F., Nyarko, D.
+A., Oduor, P., Ohemeng, K. N., Segbefia, S. I. D., Tumbula, T., Wambua,
+F., Xeflide, G. H., Ye, S., Yeboah, F.(2024). A region-wide, multi-year
+set of crop field boundary labels for Africa. arXiv:2412.18483.
