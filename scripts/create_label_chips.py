@@ -33,7 +33,8 @@ def load_catalogs(interim_dir):
     chip_catalog = pd.read_csv(chip_catalog_path)
 
     keep = ["name", "Class", "assignment_id", "Labeller", "status", "Score", 
-            "N", "Area", "Qscore", "Rscore", "x", "y", "farea", "nflds", "image", "chip"]
+            "N", "Area", "Qscore", "Rscore", "x", "y", "farea", "nflds", 
+            "image", "chip"]
     
     catalog = pd.merge(catalog, chip_catalog.drop(columns="image_date"))[keep]
     
@@ -44,7 +45,8 @@ def filter_label_catalog(catalog):
     Apply the filtering logic to select the best assignments.
     """
     keep = ["name", "Class", "assignment_id", "Labeller", "status", "Score", 
-            "N", "Area", "Qscore", "Rscore", "x", "y", "farea", "nflds", "image", "chip"]
+            "N", "Area", "Qscore", "Rscore", "x", "y", "farea", "nflds", 
+            "image", "chip"]
 
     catalog = catalog.query("status not in ['Untrusted', 'Rejected']")
 
@@ -68,7 +70,8 @@ def load_fields_data(raw_dir):
     fields_path = raw_dir / "mapped_fields_final.parquet"
     
     if not fields_path.exists():
-        raise FileNotFoundError(f"Fields data not found at {fields_path}. Please ensure it is downloaded.")
+        raise FileNotFoundError(f"Fields data not found at {fields_path}. \
+                                Please ensure it is downloaded.")
     
     print(f"Loading fields data from {fields_path}...")
     fields = gpd.read_parquet(fields_path)
@@ -104,7 +107,8 @@ def save_label_catalog(label_catalog_final, processed_dir):
     """
     Save the final label catalog to CSV.
     """
-    label_catalog_final.to_csv(processed_dir / "label-catalog-filtered.csv", index=False)
+    label_catalog_final.to_csv(processed_dir / "label-catalog-filtered.csv", 
+                               index=False)
     print(f"Final label catalog saved to {processed_dir / 'label-catalog-filtered.csv'}")
 
 def main():
@@ -118,7 +122,9 @@ def main():
     
     fields = load_fields_data(raw_dir)
     
-    label_catalog_final = create_labels(fields, label_catalog, os.path.join(raw_dir,"images"), os.path.join(processed_dir,"masks")) # ensure the image and mask folders exists
+    label_catalog_final = create_labels(fields, label_catalog, 
+                                        os.path.join(raw_dir,"images"), 
+                                        os.path.join(processed_dir,"masks")) # ensure the image and mask folders exists
 
     save_label_catalog(label_catalog_final, processed_dir)
     
