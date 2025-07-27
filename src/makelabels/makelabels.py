@@ -213,9 +213,13 @@ class MakeLabels:
         lbl_name = f"{name_parts[0]}_{row['assignment_id']}_{name_parts[1]}"
         dst = Path(label_dir) / lbl_name
 
+        row_out = row.copy()
+        row_out["label"] = lbl_name
+
         if not overwrite and os.path.exists(dst):
             msg = f"{os.path.basename(dst)} exists, skipping"
             log_message(msg, verbose, logger=self.logger)
+            return row_out
 
         else:
             polygons = fields[fields['assignment_id'] == \
@@ -294,9 +298,6 @@ class MakeLabels:
                 lbl.rio.to_raster(dst)
                 msg = f"Created {os.path.basename(dst)}"
                 log_message(msg, verbose, logger=self.logger)
-
-                row_out = row.copy()
-                row_out["label"] = lbl_name
 
                 # return {"label": lbl, "image": image, "row": row_out}
                 return row_out
