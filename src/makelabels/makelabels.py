@@ -178,8 +178,8 @@ class MakeLabels:
 
         return catrow
     
-    def threeclass_label(self, catrow, label_dir, chip_dir, src_col, fields, 
-                         verbose=True, overwrite=True) -> pd.Series:
+    def threeclass_label(self, row, fields, label_dir, image_dir, src_col, 
+                         overwrite=False, verbose=True):
         """
         Create a three class label (0: non-field, 1: field interior, 
         2: field boundary) with the same dimensions as the corresponding 
@@ -187,128 +187,253 @@ class MakeLabels:
 
         Parameters:
         -----------
-        catrow: pandas.Series
+        row: pandas.Series
             A series representing one row (assignment) from the label catalog
         fields: geopandas.GeoDataFrame
             The fields polygons, read in from the provided geoparquet file
         label_dir: str
             Directory to write rasterized labels to
-        chip_dir : str
+        image_dir : str
             Directory containing image chips
         src_col : str
             Name of column in row that contains the source image name
-        verbose : bool, default True
-            Whether to print messages or not
         overwrite: bool
             Overwrite label if it exists on disk or not (default = True)
+        verbose : bool, default True
+            Whether to print messages or not
          
         Returns: 
         --------
         A pandas.Series containing details of the written labels
         """
+        
 
-        name_parts = catrow[src_col].split("_")
-        lbl_name = f"{name_parts[0]}_{catrow['assignment_id']}_{name_parts[1]}"
+        name_parts = os.path.basename(row[src_col]).split("_")
+        lbl_name = f"{name_parts[0]}_{row['assignment_id']}_{name_parts[1]}"
         dst = Path(label_dir) / lbl_name
 
         if not overwrite and os.path.exists(dst):
             msg = f"{os.path.basename(dst)} exists, skipping"
             log_message(msg, verbose, logger=self.logger)
 
-        else: 
-            chip = rxr.open_rasterio(Path(chip_dir) / catrow[src_col])
+        polygons = fields[fields['assignment_id'] == \
+                            int(row['assignment_id'])]
+        image_path = Path(image_dir) / os.path.basename(row[src_col])
+    
+        # Open the image
+        image = rxr.open_rasterio(image_path)
 
-            transform = chip.rio.transform()
-            _, r, c = chip.shape
-            res = np.mean([abs(transform[0]), abs(transform[4])])
+        # Validate inputs
+        if not hasattr(image, 'rio'):
+            msg = f"Invalid: {os.path.basename(image_path)} needs 'rio' attr."
+            log_message(msg, verbose, logger=self.logger)
+            raise ValueError(msg)
+    
+        if not hasattr(polygons, 'geometry'):
+            msg = f"Invalid: field polygons need 'geometry' attribute."
+            # log_message(msg, verbose, logger=self.logger)
+            raise ValueError(msg)
 
-            grid = gpd.GeoDataFrame(geometry=[box(*chip.rio.bounds())], 
-                                    crs=chip.rio.crs)
+        try:
+            transform = image.rio.transform()
+            _, r, c = image.shape  
+            out_arr = np.zeros((r, c)).astype('int8')
 
-            out_arr = np.zeros((r, c)).astype('int16')
-            if catrow["nflds"] > 0:
-
-                shp = fields[fields['assignment_id'] == \
-                             catrow['assignment_id']].copy()
-
-                shp["category"] = 1
-                shp['buffer_in'] = shp.geometry.buffer(-res)
-                shp['buffer_out'] = shp.geometry.buffer(res)
-                shp = gpd.overlay(grid, shp, how='intersection')
-                out_arr = np.zeros((r, c)).astype('uint8')
-
-                shapes = ((geom, value) 
-                          for geom, value in zip(shp['geometry'], shp['category']))
-                burned = features.rasterize(shapes=shapes, fill=0, 
-                                            out=out_arr.copy(), 
-                                            transform=transform)
-
-                try:
-                    shapes_shrink = (
-                        (geom, value) 
-                        for geom, value in zip(shp['buffer_in'], shp['category'])
-                    )
-                    shrunk = features.rasterize(
-                        shapes=shapes_shrink, fill=0, out=out_arr.copy(), 
-                        transform=transform
-                    )
-                    shapes_explode = (
-                        (geom, value) 
-                        for geom, value in zip(shp['buffer_out'], shp['category'])
-                    )
-                    exploded = features.rasterize(
-                        shapes=shapes_explode, fill=0, out=out_arr.copy(), 
-                        transform=transform
-                    )
-                except:
-                    shp['buffer'] = shp.geometry.buffer(-res)
-                    shapes_shrink = (
-                        (geom, value) 
-                        for geom, value in zip(shp['buffer'], shp['category'])
-                    )
-                    shrunk = features.rasterize(
-                        shapes=shapes_shrink, fill=0, out=out_arr.copy(), 
-                        transform=transform
-                    )
-
-                lbl = (
-                    burned * 2 - shrunk + \
-                    np.where((exploded*2-burned)==1, 0, exploded*2-burned)
-                    .astype(np.uint8)
+            # Check if there are any geometries
+            if polygons.geometry.empty:
+                msg = f"No fields for {row['assignment_id']}, make 0 label." 
+                log_message(msg, verbose, logger=self.logger)
+                lbl = xr.DataArray(
+                    data=0,
+                    dims=["y", "x"],
+                    out=out_arr.copy(),
+                    coords={"y": image["y"], "x": image["x"]},
+                    attrs={"transform": transform, "crs": image.rio.crs}
                 )
             else: 
-                lbl = out_arr
+                msg = f"Rasterizing geometries for {row['assignment_id']}." 
+                log_message(msg, verbose, logger=self.logger)
+                
+                # Rasterize interior polygons
+                interior = rasterize(
+                    [(geom, 1) for geom in polygons.geometry],
+                    out_shape=(r, c),
+                    transform=transform,
+                    fill=0,
+                    out=out_arr.copy(),
+                    all_touched=True
+                )
+            
+                # Rasterize boundary polygons
+                boundary = rasterize(
+                    [(geom.boundary, 1) for geom in polygons.geometry],
+                    out_shape=(r, c),
+                    out=out_arr.copy(),
+                    transform=transform,
+                    fill=0,
+                    all_touched=True
+                )
+            
+                # Create DataArray with rasterized values
+                lbl = xr.DataArray(
+                    data=interior + boundary,
+                    dims=["y", "x"],
+                    coords={"y": image["y"], "x": image["x"]},
+                    attrs={"transform": transform, "crs": image.rio.crs}
+                )
 
-            lbl_raster = xr.DataArray(
-                lbl,
-                dims=["y", "x"],
-                coords={"y": chip["y"], "x": chip["x"]},
-                attrs={"transform": transform, "crs": chip.rio.crs}
-            )
-
-            # check dimensions
-            try:
-                assert chip.rio.bounds() == lbl_raster.rio.bounds()
-            except AssertionError as err:
+            # Validate bounds 
+            if not (image.rio.bounds() == lbl.rio.bounds()):
                 msg = f"{os.path.basename(dst)} has incorrect bounds"
+                print(msg)
                 log_message(msg, verbose, logger=self.logger)
-                raise err
-            try:    
-                assert chip.shape[1:3] == lbl_raster.shape
-            except AssertionError as err:
-                msg = f"{os.path.basename(dst)} incorrect output shape"
-                log_message(msg, verbose, logger=self.logger)
-                raise err
 
-            # write to disk
-            lbl_raster.rio.to_raster(dst)
+            lbl.rio.to_raster(dst)
             msg = f"Created {os.path.basename(dst)}"
             log_message(msg, verbose, logger=self.logger)
 
-        catrow_out = catrow.copy()
-        catrow_out["label"] = lbl_name
+            row_out = row.copy()
+            row_out["label"] = lbl_name
 
-        return catrow_out
+            # return {"label": lbl, "image": image, "row": row_out}
+            return row_out
+
+        except Exception as e:
+            msg = f"Error occurred making {row['assignment_id']}: {str(e)}"
+            log_message(msg, verbose, logger=self.logger)
+            raise
+
+    # def threeclass_label(self, catrow, label_dir, chip_dir, src_col, fields, 
+    #                      verbose=True, overwrite=True) -> pd.Series:
+    #     """
+    #     Create a three class label (0: non-field, 1: field interior, 
+    #     2: field boundary) with the same dimensions as the corresponding 
+    #     image chip
+
+    #     Parameters:
+    #     -----------
+    #     catrow: pandas.Series
+    #         A series representing one row (assignment) from the label catalog
+    #     fields: geopandas.GeoDataFrame
+    #         The fields polygons, read in from the provided geoparquet file
+    #     label_dir: str
+    #         Directory to write rasterized labels to
+    #     chip_dir : str
+    #         Directory containing image chips
+    #     src_col : str
+    #         Name of column in row that contains the source image name
+    #     verbose : bool, default True
+    #         Whether to print messages or not
+    #     overwrite: bool
+    #         Overwrite label if it exists on disk or not (default = True)
+         
+    #     Returns: 
+    #     --------
+    #     A pandas.Series containing details of the written labels
+    #     """
+
+    #     name_parts = catrow[src_col].split("_")
+    #     lbl_name = f"{name_parts[0]}_{catrow['assignment_id']}_{name_parts[1]}"
+    #     dst = Path(label_dir) / lbl_name
+
+    #     if not overwrite and os.path.exists(dst):
+    #         msg = f"{os.path.basename(dst)} exists, skipping"
+    #         log_message(msg, verbose, logger=self.logger)
+
+    #     else: 
+    #         chip = rxr.open_rasterio(Path(chip_dir) / catrow[src_col])
+
+    #         transform = chip.rio.transform()
+    #         _, r, c = chip.shape
+    #         res = np.mean([abs(transform[0]), abs(transform[4])])
+
+    #         grid = gpd.GeoDataFrame(geometry=[box(*chip.rio.bounds())], 
+    #                                 crs=chip.rio.crs)
+
+    #         out_arr = np.zeros((r, c)).astype('int16')
+    #         if catrow["nflds"] > 0:
+
+    #             shp = fields[fields['assignment_id'] == \
+    #                          catrow['assignment_id']].copy()
+
+    #             shp["category"] = 1
+    #             shp['buffer_in'] = shp.geometry.buffer(-res)
+    #             shp['buffer_out'] = shp.geometry.buffer(res)
+    #             shp = gpd.overlay(grid, shp, how='intersection')
+    #             out_arr = np.zeros((r, c)).astype('uint8')
+
+    #             shapes = ((geom, value) 
+    #                       for geom, value in zip(shp['geometry'], shp['category']))
+    #             burned = features.rasterize(shapes=shapes, fill=0, 
+    #                                         out=out_arr.copy(), 
+    #                                         transform=transform)
+
+    #             try:
+    #                 shapes_shrink = (
+    #                     (geom, value) 
+    #                     for geom, value in zip(shp['buffer_in'], shp['category'])
+    #                 )
+    #                 shrunk = features.rasterize(
+    #                     shapes=shapes_shrink, fill=0, out=out_arr.copy(), 
+    #                     transform=transform
+    #                 )
+    #                 shapes_explode = (
+    #                     (geom, value) 
+    #                     for geom, value in zip(shp['buffer_out'], shp['category'])
+    #                 )
+    #                 exploded = features.rasterize(
+    #                     shapes=shapes_explode, fill=0, out=out_arr.copy(), 
+    #                     transform=transform
+    #                 )
+    #             except:
+    #                 shp['buffer'] = shp.geometry.buffer(-res)
+    #                 shapes_shrink = (
+    #                     (geom, value) 
+    #                     for geom, value in zip(shp['buffer'], shp['category'])
+    #                 )
+    #                 shrunk = features.rasterize(
+    #                     shapes=shapes_shrink, fill=0, out=out_arr.copy(), 
+    #                     transform=transform
+    #                 )
+
+    #             lbl = (
+    #                 burned * 2 - shrunk + \
+    #                 np.where((exploded*2-burned)==1, 0, exploded*2-burned)
+    #                 .astype(np.uint8)
+    #             )
+    #         else: 
+    #             lbl = out_arr
+
+    #         lbl_raster = xr.DataArray(
+    #             lbl,
+    #             dims=["y", "x"],
+    #             coords={"y": chip["y"], "x": chip["x"]},
+    #             attrs={"transform": transform, "crs": chip.rio.crs}
+    #         )
+
+    #         # check dimensions
+    #         try:
+    #             assert chip.rio.bounds() == lbl_raster.rio.bounds()
+    #         except AssertionError as err:
+    #             msg = f"{os.path.basename(dst)} has incorrect bounds"
+    #             log_message(msg, verbose, logger=self.logger)
+    #             raise err
+    #         try:    
+    #             assert chip.shape[1:3] == lbl_raster.shape
+    #         except AssertionError as err:
+    #             msg = f"{os.path.basename(dst)} incorrect output shape"
+    #             log_message(msg, verbose, logger=self.logger)
+    #             raise err
+
+    #         # write to disk
+    #         lbl_raster.rio.to_raster(dst)
+    #         msg = f"Created {os.path.basename(dst)}"
+    #         log_message(msg, verbose, logger=self.logger)
+
+    #     catrow_out = catrow.copy()
+    #     catrow_out["label"] = lbl_name
+
+    #     return catrow_out
     
     def filter_catalog(self, catalog, groups, metric, keep) -> pd.DataFrame:
         """
