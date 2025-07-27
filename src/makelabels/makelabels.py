@@ -2,6 +2,7 @@ import os
 import rasterio
 from rasterio.enums import Resampling
 from rasterio import features
+from rasterio.features import rasterize
 import xarray as xr
 import rioxarray as rxr
 import numpy as np
