@@ -217,92 +217,94 @@ class MakeLabels:
             msg = f"{os.path.basename(dst)} exists, skipping"
             log_message(msg, verbose, logger=self.logger)
 
-        polygons = fields[fields['assignment_id'] == \
-                            int(row['assignment_id'])]
-        image_path = Path(image_dir) / os.path.basename(row[src_col])
-    
-        # Open the image
-        image = rxr.open_rasterio(image_path)
+        else:
+            polygons = fields[fields['assignment_id'] == \
+                                int(row['assignment_id'])]
+            image_path = Path(image_dir) / os.path.basename(row[src_col])
+        
+            # Open the image
+            image = rxr.open_rasterio(image_path)
 
-        # Validate inputs
-        if not hasattr(image, 'rio'):
-            msg = f"Invalid: {os.path.basename(image_path)} needs 'rio' attr."
-            log_message(msg, verbose, logger=self.logger)
-            raise ValueError(msg)
-    
-        if not hasattr(polygons, 'geometry'):
-            msg = f"Invalid: field polygons need 'geometry' attribute."
-            # log_message(msg, verbose, logger=self.logger)
-            raise ValueError(msg)
-
-        try:
-            transform = image.rio.transform()
-            _, r, c = image.shape  
-            out_arr = np.zeros((r, c)).astype('int8')
-
-            # Check if there are any geometries
-            if polygons.geometry.empty:
-                msg = f"No fields for {row['assignment_id']}, make 0 label." 
+            # Validate inputs
+            if not hasattr(image, 'rio'):
+                msg = f"Invalid: {os.path.basename(image_path)} needs 'rio' \
+                    attribute."
                 log_message(msg, verbose, logger=self.logger)
-                lbl = xr.DataArray(
-                    data=0,
-                    dims=["y", "x"],
-                    out=out_arr.copy(),
-                    coords={"y": image["y"], "x": image["x"]},
-                    attrs={"transform": transform, "crs": image.rio.crs}
-                )
-            else: 
-                msg = f"Rasterizing geometries for {row['assignment_id']}." 
-                log_message(msg, verbose, logger=self.logger)
+                raise ValueError(msg)
+        
+            if not hasattr(polygons, 'geometry'):
+                msg = f"Invalid: field polygons need 'geometry' attribute."
+                # log_message(msg, verbose, logger=self.logger)
+                raise ValueError(msg)
+
+            try:
+                transform = image.rio.transform()
+                _, r, c = image.shape  
+                out_arr = np.zeros((r, c)).astype('int8')
+
+                # Check if there are any geometries
+                if polygons.geometry.empty:
+                    msg = f"No fields for {row['assignment_id']}, make 0 label." 
+                    log_message(msg, verbose, logger=self.logger)
+                    lbl = xr.DataArray(
+                        data=0,
+                        dims=["y", "x"],
+                        out=out_arr.copy(),
+                        coords={"y": image["y"], "x": image["x"]},
+                        attrs={"transform": transform, "crs": image.rio.crs}
+                    )
+                else: 
+                    msg = f"Rasterizing geometries for {row['assignment_id']}." 
+                    log_message(msg, verbose, logger=self.logger)
+                    
+                    # Rasterize interior polygons
+                    interior = rasterize(
+                        [(geom, 1) for geom in polygons.geometry],
+                        out_shape=(r, c),
+                        transform=transform,
+                        fill=0,
+                        out=out_arr.copy(),
+                        all_touched=True
+                    )
                 
-                # Rasterize interior polygons
-                interior = rasterize(
-                    [(geom, 1) for geom in polygons.geometry],
-                    out_shape=(r, c),
-                    transform=transform,
-                    fill=0,
-                    out=out_arr.copy(),
-                    all_touched=True
-                )
-            
-                # Rasterize boundary polygons
-                boundary = rasterize(
-                    [(geom.boundary, 1) for geom in polygons.geometry],
-                    out_shape=(r, c),
-                    out=out_arr.copy(),
-                    transform=transform,
-                    fill=0,
-                    all_touched=True
-                )
-            
-                # Create DataArray with rasterized values
-                lbl = xr.DataArray(
-                    data=interior + boundary,
-                    dims=["y", "x"],
-                    coords={"y": image["y"], "x": image["x"]},
-                    attrs={"transform": transform, "crs": image.rio.crs}
-                )
+                    # Rasterize boundary polygons
+                    boundary = rasterize(
+                        [(geom.boundary, 1) for geom in polygons.geometry],
+                        out_shape=(r, c),
+                        out=out_arr.copy(),
+                        transform=transform,
+                        fill=0,
+                        all_touched=True
+                    )
+                
+                    # Create DataArray with rasterized values
+                    lbl = xr.DataArray(
+                        data=interior + boundary,
+                        dims=["y", "x"],
+                        coords={"y": image["y"], "x": image["x"]},
+                        attrs={"transform": transform, "crs": image.rio.crs}
+                    )
 
-            # Validate bounds 
-            if not (image.rio.bounds() == lbl.rio.bounds()):
-                msg = f"{os.path.basename(dst)} has incorrect bounds"
-                print(msg)
+                # Validate bounds 
+                if not (image.rio.bounds() == lbl.rio.bounds()):
+                    msg = f"{os.path.basename(dst)} has incorrect bounds"
+                    print(msg)
+                    log_message(msg, verbose, logger=self.logger)
+
+                lbl.rio.to_raster(dst)
+                msg = f"Created {os.path.basename(dst)}"
                 log_message(msg, verbose, logger=self.logger)
 
-            lbl.rio.to_raster(dst)
-            msg = f"Created {os.path.basename(dst)}"
-            log_message(msg, verbose, logger=self.logger)
+                row_out = row.copy()
+                row_out["label"] = lbl_name
 
-            row_out = row.copy()
-            row_out["label"] = lbl_name
+                # return {"label": lbl, "image": image, "row": row_out}
+                return row_out
 
-            # return {"label": lbl, "image": image, "row": row_out}
-            return row_out
-
-        except Exception as e:
-            msg = f"Error occurred making {row['assignment_id']}: {str(e)}"
-            log_message(msg, verbose, logger=self.logger)
-            raise
+            except Exception as e:
+                msg = f"Error occurred making {row['assignment_id']}: {str(e)}"
+                log_message(msg, verbose, logger=self.logger)
+                raise
 
     # def threeclass_label(self, catrow, label_dir, chip_dir, src_col, fields, 
     #                      verbose=True, overwrite=True) -> pd.Series:
