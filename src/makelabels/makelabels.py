@@ -251,8 +251,8 @@ class MakeLabels:
                     msg = f"No fields for {row['assignment_id']}, make 0 label." 
                     log_message(msg, verbose, logger=self.logger)
                     lbl = xr.DataArray(
+                        data=0,
                         dims=["y", "x"],
-                        out=out_arr.copy(),
                         coords={"y": image["y"], "x": image["x"]},
                         attrs={"transform": transform, "crs": image.rio.crs}
                     )
