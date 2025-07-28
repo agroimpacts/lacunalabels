@@ -1,6 +1,6 @@
 [project]
 name = "makelabels"
-version = "0.0.2-2"
+version = "0.0.2-3"
 authors = [
   { name="Lyndon Estes", email="lestes@clarku.edu" },
 ]
