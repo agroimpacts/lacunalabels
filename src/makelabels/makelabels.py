@@ -238,7 +238,7 @@ class MakeLabels:
         
             if not hasattr(polygons, 'geometry'):
                 msg = f"Invalid: field polygons need 'geometry' attribute."
-                # log_message(msg, verbose, logger=self.logger)
+                log_message(msg, verbose, logger=self.logger)
                 raise ValueError(msg)
 
             try:
@@ -251,7 +251,6 @@ class MakeLabels:
                     msg = f"No fields for {row['assignment_id']}, make 0 label." 
                     log_message(msg, verbose, logger=self.logger)
                     lbl = xr.DataArray(
-                        data=0,
                         dims=["y", "x"],
                         out=out_arr.copy(),
                         coords={"y": image["y"], "x": image["x"]},
@@ -266,8 +265,8 @@ class MakeLabels:
                         [(geom, 1) for geom in polygons.geometry],
                         out_shape=(r, c),
                         transform=transform,
-                        fill=0,
                         out=out_arr.copy(),
+                        fill=0,
                         all_touched=True
                     )
                 
