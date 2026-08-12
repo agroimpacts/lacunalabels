@@ -13,11 +13,10 @@ and led by [Farmerline](https://farmerline.co/), in collaboration with
 [Agricultural Impacts Research Group](agroimpacts.info) at [Clark
 University](https://www.clarku.edu/departments/geography/).
 
-Please refer to the [technical
-report](notebooks/report/technical-report.pdf) for more details on the
+Please refer to the [paper](docs/manuscript/manuscript.pdf) for more details on the
 methods used to develop the dataset, an analysis of label quality, and
-usage guidelines. The report and additional documents, analyses, and
-demonstration code used to develop labels by cloning the repository:
+usage guidelines. The paper and additional documents, analyses, and
+demonstration code used to develop labels can be obtained by cloning the repository:
 
 ``` bash
 git clone git@github.com:agroimpacts/lacunalabels.git
